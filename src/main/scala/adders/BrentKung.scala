@@ -35,7 +35,7 @@ class UIntBrentKungAdderType(opModule: Boolean = true) extends AdderType[UInt] {
     }
   }
 
-  def pgOp(right: PGBundle, left: PGBundle): PGBundle = { // returns (p, g)
+  def pgOp(right: PGBundle, left: PGBundle): PGBundle = {
 
     def pgOpImpl(right: PGBundle, left: PGBundle) = {
       val o = Wire(new PGBundle)
@@ -70,8 +70,8 @@ class UIntBrentKungAdderType(opModule: Boolean = true) extends AdderType[UInt] {
     }
   }
 
-  def propagateGenerate(x: UInt, y: UInt): Seq[PGBundle] = { // returns (p[], g[])
-    // p and g should be of equal size
+  def propagateGenerate(x: UInt, y: UInt): Seq[PGBundle] = {
+    // x and y should be of equal size
     assert(x.getWidth == y.getWidth)
 
     for ((xi, yi) <- x.asBools zip y.asBools)
@@ -81,12 +81,11 @@ class UIntBrentKungAdderType(opModule: Boolean = true) extends AdderType[UInt] {
         pgi.g := xi & yi
         pgi
       }
-
   }
 
   override def add(x: UInt, y: UInt, cin: Bool): UInt = {
     val pgIn = propagateGenerate(x, y)
-    val pgOut = prefix(pgIn, pgOp) // p, g of intervals
+    val pgOut = prefix(pgIn, pgOp) // (p, g) [0, i]  i <- (0..width)
 
     val c = Seq(cin) ++ (for (pgi <- pgOut) yield pgi.g | (cin & pgi.p))
     val s = (for ((ci, pgi) <- c zip pgIn) yield ci ^ pgi.p) :+ c.last
