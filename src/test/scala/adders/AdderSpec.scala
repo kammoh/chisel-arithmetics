@@ -19,24 +19,20 @@ class AdderSpec extends FlatSpec with GeneratorDrivenPropertyChecks  with Chisel
     )
   }
 
-  def genAdder(w: Int) = {
-    new Adder(w)
-  }
-
-  it should "compute Add" in {
+  it should "add" in {
 
     def add(a: BigInt, b: BigInt) : BigInt = {
       a + b
     }
 
-    val widths = for (n <- Gen.choose(1, 63)) yield n
+//    val widths = for (n <- Gen.choose(1, 63)) yield n
 
 //    forAll (widths) { w: Int =>
       val w = 8
       val inputInts = for (n <- Gen.chooseNum(0L, Math.pow(2, w).toLong - 1, 1)) yield BigInt(n)
 
 
-      test(genAdder(w), manager) { c =>
+      test(new Adder(w), manager) { c =>
         c.io.in.initSource().setSourceClock(c.clock)
         c.io.out.initSink().setSinkClock(c.clock)
 
@@ -93,16 +89,14 @@ object TestPrefix extends App {
   val x = (0 until 8).toList
 
   def op(x: Int, y: Int): Int = {
-    println(s"op ${x} , $y -> ${x + y}")
+    println(s"op $x , $y -> ${x + y}")
     x + y
   }
-
-  //  val r = a.prefix[Int](x, op)
 
   println(a.prefix(x, op))
 }
 
-object GenVerilogAndDiagram extends App {
+object GenerateVerilogAndDiagram extends App {
   val adderWidth = 8
 
   private val manager = new ExecutionOptionsManager("genVerilog") with HasChiselExecutionOptions with HasFirrtlOptions {
@@ -122,6 +116,5 @@ object GenVerilogAndDiagram extends App {
   chisel3.Driver.execute(manager, () => new Adder(adderWidth))
 
   FirrtlDiagrammer.run(config)
-
 
 }

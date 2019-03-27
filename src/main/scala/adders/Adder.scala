@@ -1,7 +1,7 @@
 package adders
 
 import chisel3._
-import chisel3.core.{BundleLitBinding, dontTouch}
+import chisel3.core.BundleLitBinding
 import chisel3.experimental.chiselName
 import chisel3.util.Decoupled
 
@@ -45,6 +45,6 @@ class Adder(width: Int) extends Module {
   // or as implicit (with carry-in tied to 0)
     io.out.bits := io.in.bits.x ++& io.in.bits.y
 
-  io.out.valid := true.B // io.in.valid
-  io.in.ready := true.B // io.out.ready
+  io.out.valid :=  io.in.valid
+  io.in.ready := io.out.ready
 }
