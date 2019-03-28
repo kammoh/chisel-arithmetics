@@ -1,5 +1,6 @@
 package adders
 
+import barstools.macros.MacroCompilerTransform
 import chisel3._
 import chisel3.iotesters.{Driver, PeekPokeTester, TesterOptionsManager}
 import chisel3.tester._
@@ -10,7 +11,7 @@ import org.scalatest._
 import org.scalatest.prop._
 import treadle.HasTreadleSuite
 
-class AdderSpec extends FlatSpec with GeneratorDrivenPropertyChecks  with ChiselScalatestTester {
+class AdderSpec extends FlatSpec with GeneratorDrivenPropertyChecks with ChiselScalatestTester {
   behavior of "Adder"
 
   private val manager = new TesterOptionsManager with HasTreadleSuite {
@@ -19,33 +20,33 @@ class AdderSpec extends FlatSpec with GeneratorDrivenPropertyChecks  with Chisel
     )
   }
 
-  it should "add" in {
+  it should "compute Add" in {
 
-    def add(a: BigInt, b: BigInt) : BigInt = {
+    def add(a: BigInt, b: BigInt): BigInt = {
       a + b
     }
 
-//    val widths = for (n <- Gen.choose(1, 63)) yield n
+    //    val widths = for (n <- Gen.choose(1, 63)) yield n
 
-//    forAll (widths) { w: Int =>
-      val w = 8
-      val inputInts = for (n <- Gen.chooseNum(0L, Math.pow(2, w).toLong - 1, 1)) yield BigInt(n)
+    //    forAll (widths) { w: Int =>
+    val w = 8
+    val inputInts = for (n <- Gen.chooseNum(0L, Math.pow(2, w).toLong - 1, 1)) yield BigInt(n)
 
 
-      test(new Adder(w), manager) { c =>
-        c.io.in.initSource().setSourceClock(c.clock)
-        c.io.out.initSink().setSinkClock(c.clock)
+    test(new Adder(w), manager) { c =>
+      c.io.in.initSource().setSourceClock(c.clock)
+      c.io.out.initSink().setSinkClock(c.clock)
 
-        forAll(inputInts, inputInts) { (a: BigInt, b: BigInt) =>
-          fork {
-            c.io.in.enqueue(c.io.in.bits.Lit(a.U, b.U))
-            c.clock.step(1)
-          }.fork {
-            c.io.out.expectDequeue(add(a, b).U)
-          }.join()
-        }
+      forAll(inputInts, inputInts) { (a: BigInt, b: BigInt) =>
+        fork {
+          c.io.in.enqueue(c.io.in.bits.Lit(a.U, b.U))
+          c.clock.step(1)
+        }.fork {
+          c.io.out.expectDequeue(add(a, b).U)
+        }.join()
       }
-//    }
+    }
+    //    }
   }
 }
 
@@ -66,17 +67,20 @@ object TestMain extends App {
 
   val testResult = Driver.execute(() => new Adder(adderWidth), manager) {
 
-    c => new PeekPokeTester(c) {
-      val rng = scala.util.Random
-      for (_ <- 0 to 1000) {
-        val x = rng.nextInt( Math.pow(2, adderWidth).toInt - 1)
-        val y =  rng.nextInt(Math.pow(2, adderWidth).toInt - 1)
-        poke(c.io.in.bits.x, x)
-        poke(c.io.in.bits.y, y)
-        step(1)
-        expect(c.io.out.bits, x + y, "failed")
+    c =>
+      new PeekPokeTester(c) {
+        val rng = scala.util.Random
+        for (_ <- 0 to 1000) {
+          val x = rng.nextInt(Math.pow(2, adderWidth).toInt - 1)
+          val y = rng.nextInt(Math.pow(2, adderWidth).toInt - 1)
+          val cin = rng.nextInt(2)
+          poke(c.io.in.bits.x, x)
+          poke(c.io.in.bits.y, y)
+          poke(c.io.in.bits.cin, cin)
+          step(1)
+          expect(c.io.out.bits, x + y + cin, s"failed for x=$x y=$y cin=$cin")
+        }
       }
-    }
   }
   assert(testResult)
   println("SUCCESS!!")
@@ -104,6 +108,10 @@ object GenerateVerilogAndDiagram extends App {
       targetDirName = "generate",
       topName = "Adder",
     )
+    firrtlOptions.copy(
+      customTransforms = firrtlOptions.customTransforms :+ new MacroCompilerTransform
+    )
+
   }
 
   val firrtl = chisel3.Driver.emit(() => new Adder(adderWidth))

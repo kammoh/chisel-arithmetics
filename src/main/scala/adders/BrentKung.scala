@@ -10,7 +10,7 @@ class PGBundle extends Bundle {
 }
 
 @chiselName
-class UIntBrentKungAdderType(opModule: Boolean = true) extends AdderType[UInt] {
+class UIntBrentKungAdderType(carryOpAsModule: Boolean = true) extends AdderType[UInt] {
 
   def prefix[T](x: Seq[T], op: (T, T) => T)(implicit m: ClassTag[T]): Seq[T] = {
 
@@ -58,7 +58,7 @@ class UIntBrentKungAdderType(opModule: Boolean = true) extends AdderType[UInt] {
       io.out := pgOpImpl(io.in.right, io.in.left)
     }
 
-    if (opModule) {
+    if (carryOpAsModule) {
       val carryOp = Module(new CarryOp)
 
       carryOp.io.in.left := left
@@ -72,7 +72,7 @@ class UIntBrentKungAdderType(opModule: Boolean = true) extends AdderType[UInt] {
 
   def propagateGenerate(x: UInt, y: UInt): Seq[PGBundle] = {
     // x and y should be of equal size
-    assert(x.getWidth == y.getWidth)
+    assert(x.getWidth == y.getWidth, s"withs must be the same! width of x: ${x.getWidth}, width of y: ${y.getWidth} ")
 
     for ((xi, yi) <- x.asBools zip y.asBools)
       yield {

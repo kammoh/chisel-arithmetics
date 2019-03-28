@@ -29,6 +29,10 @@ libraryDependencies += "edu.berkeley.cs" %% "firrtl-diagrammer" % "1.1-SNAPSHOT"
 
 libraryDependencies += "edu.berkeley.cs" %% "dsptools" % "latest"
 
+// Local dependencies
+libraryDependencies += "edu.berkeley.cs" %% "barstools" % "0.1-SNAPSHOT"
+
+
 libraryDependencies += "org.scalanlp" %% "breeze" % "0.13+"
 
 libraryDependencies += "org.scalactic" %% "scalactic" % "3.0.5"

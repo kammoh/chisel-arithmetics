@@ -1,9 +1,9 @@
 package adders
 
 import chisel3._
+import chisel3.util._
 import chisel3.core.BundleLitBinding
 import chisel3.experimental.chiselName
-import chisel3.util.Decoupled
 
 class AdderInput(val w: Int) extends Bundle {
 
@@ -37,13 +37,13 @@ class Adder(width: Int) extends Module {
 
   // an implicit AdderType needs to be in score
   //  implicit val adderType = new UIntCarryLookaheadAdderType(4)
-  implicit val adderType = new UIntBrentKungAdderType
+  implicit val adderType = new UIntBrentKungAdderType(carryOpAsModule = false)
 
 
   // either use as explicit (when need the carry-in):
 //  io.out.bits := adderType.add(io.in.bits.x, io.in.bits.y, io.in.bits.cin)
   // or as implicit (with carry-in tied to 0)
-    io.out.bits := io.in.bits.x ++& io.in.bits.y
+    io.out.bits := io.in.bits.x ++& io.in.bits.y ++& io.in.bits.cin
 
   io.out.valid :=  io.in.valid
   io.in.ready := io.out.ready
