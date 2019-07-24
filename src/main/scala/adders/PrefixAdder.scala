@@ -69,8 +69,8 @@ abstract class PrefixAdder[T <: Bits with Num[T]](carryOpAsModule: Boolean) exte
     val pgOut = prefix(pgIn) // (p, g) [0, i]  i <- (0..width)
 
     val c = Seq(cin) ++ (for (pgi <- pgOut) yield pgi.g | (cin & pgi.p))
-    val s = (for ((ci, pgi) <- c zip pgIn) yield ci ^ pgi.p) :+ c.last
+    val s = VecInit((for ((ci, pgi) <- c zip pgIn) yield ci ^ pgi.p) :+ c.last)
 
-    VecInit(s).asUInt.asTypeOf(x.pad(math.max(x.getWidth,y.getWidth) + 1))
+    s.asUInt.asTypeOf(x.pad(math.max(x.getWidth,y.getWidth) + 1))
   }
 }

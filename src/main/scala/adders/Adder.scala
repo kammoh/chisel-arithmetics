@@ -25,9 +25,9 @@ class Adder(width: Int) extends Module {
   )
 
   // an implicit AdderType needs to be in score
-  //    implicit val adderType = new UIntCarryLookaheadAdderType(4)
-//  implicit val adderType = new BrentKung[UInt]
-  implicit val adderType = new KoggeStone[UInt]
+  implicit val adderType = new CarryLookAhead[UInt](4)
+  //  implicit val adderType = new BrentKung[UInt]
+  //  implicit val adderType = new KoggeStone[UInt]
 
 
   // either use as explicit (when need the carry-in):

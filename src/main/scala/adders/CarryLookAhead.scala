@@ -1,11 +1,10 @@
 package adders
 
 import chisel3._
-import chisel3.core.dontTouch
-import chisel3.experimental.chiselName
+import chisel3.experimental.{chiselName, dontTouch}
 
 @chiselName
-class UIntCarryLookaheadAdderType(blockSize: Int) extends AdderType[UInt] {
+class CarryLookAhead[T <: Bits with Num[T]](blockSize: Int) extends AdderType[T] {
 
   @chiselName
   class CarryLookaheadAdderBlock(width: Int) extends Module {
@@ -46,9 +45,7 @@ class UIntCarryLookaheadAdderType(blockSize: Int) extends AdderType[UInt] {
   }
 
   def blockGenerator(p: Seq[Bool], g: Seq[Bool], cin: Bool): (Bool, Bool, Seq[Bool]) = { // returns p, g, c[]
-    assert(g.length == p.length && g.nonEmpty)
-
-    println(s"cla: g=$g p=$p")
+    assert(g.length == p.length && g.nonEmpty, s"g.length:${g.length} ==? p.length:${p.length} &&? g.nonEmpty:${g.nonEmpty}")
 
     if (g.length == 1) {
       return (p.head, g.head, Seq(cin))
@@ -60,7 +57,7 @@ class UIntCarryLookaheadAdderType(blockSize: Int) extends AdderType[UInt] {
 
     def chunk(i: Int, s: Seq[Bool]) = {
       val chunkSize = g.length / blockSize
-      s.slice(i * chunkSize, (i + 1) * chunkSize)
+      s.slice(i * chunkSize, (i + 1) * chunkSize).padTo(chunkSize, 0.B)
     }
 
     var exportedCarries = Seq.empty[Bool]
@@ -78,7 +75,7 @@ class UIntCarryLookaheadAdderType(blockSize: Int) extends AdderType[UInt] {
     (carryLookaheadAdderBlock.io.out.p, carryLookaheadAdderBlock.io.out.g, VecInit(exportedCarries))
   }
 
-  override def add(x: UInt, y: UInt, cin: Bool): UInt = {
+  override def add(x: T, y: T, cin: Bool): T = {
     val w = Math.min(x.getWidth, y.getWidth)
 
     assert(x.getWidth == y.getWidth) // TODO
@@ -98,6 +95,6 @@ class UIntCarryLookaheadAdderType(blockSize: Int) extends AdderType[UInt] {
 
     s(w) := gOut | (carries.last & pOut)
 
-    s.asUInt()
+    s.asUInt.asTypeOf(x.pad(math.max(x.getWidth,y.getWidth) + 1))
   }
 }

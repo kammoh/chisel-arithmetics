@@ -16,11 +16,11 @@ class AdderSpec extends FlatSpec with GeneratorDrivenPropertyChecks with ChiselS
       a + b
     }
 
-    val widths = for (n <- Gen.choose(2, 128)) yield n
+//    val widths = for (n <- Gen.choose(2, 128)) yield n
 
-    forAll(widths) { w: Int =>
+//    forAll(widths) { w: Int =>
 
-
+      val w = 64
       test(new Adder(w)) { c =>
         c.io.in.initSource().setSourceClock(c.clock)
         c.io.out.initSink().setSinkClock(c.clock)
@@ -35,7 +35,7 @@ class AdderSpec extends FlatSpec with GeneratorDrivenPropertyChecks with ChiselS
           }.join()
         }
       }
-    }
+//    }
   }
 }
 
