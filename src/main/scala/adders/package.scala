@@ -9,31 +9,32 @@ package object adders {
   }
 
 
-  case class PimpedOpWithCarry[T <: Data](lhsValue:T, op: (T, T, Bool) => T, rhsValue: T, cinValue:Option[Bool]) extends PimpedOp(lhsValue) {
+  case class PimpedOpWithCarry[T <: Data with Num[T]](lhsValue: T, op: (T, T, Bool) => T, rhsValue: T, cinValue: Option[Bool])
+    extends PimpedOp(lhsValue) {
 
     def +(cin: Bool): T = {
       println("adder has carry!")
       PimpedOpWithCarry(lhsValue, op, rhsValue, Some(cin)).conv
     }
 
-    def ++&(cin: Bool) :T = this + cin
+    def ++&(cin: Bool): T = this + cin
 
-    override def conv : T = op(lhsValue, rhsValue, cinValue match {case Some(cin) => cin; case _ => 0.B } )
+    override def conv: T = op(lhsValue, rhsValue, cinValue match { case Some(cin) => cin; case _ => 0.B })
   }
 
-  implicit class PimpedOp[T <: Data](val u: T) {
+  implicit class PimpedOp[T <: Data with Num[T]](val u: T) {
 
     def ++&(other: T, cin: Bool = 0.B)(implicit adderType: AdderType[T]): PimpedOpWithCarry[T] = {
       println(s"pimped adder ${adderType.getClass.getCanonicalName}")
 
-      PimpedOpWithCarry(this.conv, adderType.add, other, Some(cin) )
+      PimpedOpWithCarry(this.conv, adderType.add, other, Some(cin))
     }
 
-    def conv : T = u
+    def conv: T = u
 
   }
 
-  implicit def conv[T <: Data](t: PimpedOp[T]): T = {
+  implicit def conv[T <: Data with Num[T]](t: PimpedOp[T]): T = {
     t.conv
   }
 }

@@ -23,14 +23,13 @@ libraryDependencies += "edu.berkeley.cs" %% "chisel3" % "3.2-SNAPSHOT"
 
 libraryDependencies += "edu.berkeley.cs" %% "chisel-iotesters" % "1.3-SNAPSHOT"
 
-libraryDependencies += "edu.berkeley.cs" %% "dsptools" % "1.2-SNAPSHOT"
+//libraryDependencies += "edu.berkeley.cs" %% "dsptools" % "1.2-SNAPSHOT"
 
-libraryDependencies += "edu.berkeley.cs" %% "firrtl-diagrammer" % "1.1-SNAPSHOT"
+//libraryDependencies += "edu.berkeley.cs" %% "firrtl-diagrammer" % "1.1-SNAPSHOT"
 
-libraryDependencies += "edu.berkeley.cs" %% "dsptools" % "latest"
 
 // Local dependencies
-libraryDependencies += "edu.berkeley.cs" %% "barstools" % "0.1-SNAPSHOT"
+//libraryDependencies += "edu.berkeley.cs" %% "barstools" % "0.1-SNAPSHOT"
 
 
 libraryDependencies += "org.scalanlp" %% "breeze" % "0.13+"
