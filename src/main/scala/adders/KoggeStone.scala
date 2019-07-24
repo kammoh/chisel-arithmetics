@@ -6,7 +6,7 @@ import chisel3.experimental.chiselName
 import scala.annotation.tailrec
 
 @chiselName
-class KoggeStone[T <: Data with Num[T]](carryOpAsModule: Boolean = false) extends PrefixAdder[T](carryOpAsModule) {
+class KoggeStone[T <: Bits with Num[T]](carryOpAsModule: Boolean = false) extends PrefixAdder[T](carryOpAsModule) {
   override def prefix(in: Seq[PGBundle]): Seq[PGBundle] = {
     println(s"KoggeStone of width ${in.length}")
 

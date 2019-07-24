@@ -5,7 +5,7 @@ import chisel3.experimental.chiselName
 
 
 @chiselName
-class BrentKung[T <: Data with Num[T]](carryOpAsModule: Boolean = false) extends PrefixAdder[T](carryOpAsModule) {
+class BrentKung[T <: Bits with Num[T]](carryOpAsModule: Boolean = false) extends PrefixAdder[T](carryOpAsModule) {
 
   override def prefix(x: Seq[PGBundle]): Seq[PGBundle] = {
 

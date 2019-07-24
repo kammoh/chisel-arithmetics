@@ -1,10 +1,9 @@
 package adders
 
-import chisel3.experimental.{FixedPoint, chiselName}
+import chisel3.experimental.chiselName
 import chisel3._
-import chisel3.util._
 
-abstract class PrefixAdder[T <: Data with Num[T]](carryOpAsModule: Boolean) extends AdderType[T] {
+abstract class PrefixAdder[T <: Bits with Num[T]](carryOpAsModule: Boolean) extends AdderType[T] {
 
   def prefix(x: Seq[PGBundle]): Seq[PGBundle]
 
@@ -72,15 +71,6 @@ abstract class PrefixAdder[T <: Data with Num[T]](carryOpAsModule: Boolean) exte
     val c = Seq(cin) ++ (for (pgi <- pgOut) yield pgi.g | (cin & pgi.p))
     val s = (for ((ci, pgi) <- c zip pgIn) yield ci ^ pgi.p) :+ c.last
 
-    val v = VecInit(s).asUInt
-//    v.asTypeOf(x + y)
-//
-    x match {
-      // TODO FIXME figure out a way to cloneType without width
-      case _: UInt => v.asInstanceOf[T]
-      case _: SInt => v.asSInt.asInstanceOf[T]
-      case xx: FixedPoint => v.asFixedPoint(xx.binaryPoint).asInstanceOf[T]
-    }
-
+    VecInit(s).asUInt.asTypeOf(x.pad(math.max(x.getWidth,y.getWidth) + 1))
   }
 }
