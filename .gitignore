@@ -1,6 +1,8 @@
-# Created by .ignore support plugin (hsz.mobi)
-### Scala template
+.bloop/
+.metals/
+.vscode/
 *.class
 *.log
 .idea/
 .idea/*
+out/

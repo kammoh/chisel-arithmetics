@@ -2,39 +2,48 @@ package adders
 
 import chisel3._
 import chisel3.experimental.BundleLiterals._
-import chisel3.tester._
-import org.scalacheck.Gen
-import org.scalatest._
-import org.scalatest.prop._
+import chiseltest._
+import org.scalatest.flatspec.AnyFlatSpec
+// import org.scalacheck.Gen
+// import org.scalatest.prop.TableDrivenPropertyChecks
 
-class AdderSpec extends FlatSpec with GeneratorDrivenPropertyChecks with ChiselScalatestTester {
+class AdderSpec extends AnyFlatSpec with ChiselScalatestTester {
   behavior of "Adder"
 
   it should "compute Add" in {
 
-    def add(a: BigInt, b: BigInt): BigInt = {
-      a + b
-    }
+    // def add(a: BigInt, b: BigInt): BigInt = {
+    //   a + b
+    // }
+    val rnd = scala.util.Random
 
 //    val widths = for (n <- Gen.choose(2, 128)) yield n
 
 //    forAll(widths) { w: Int =>
+    val w = 64
+    val numTests = 1000
+    val withCarry = true
+    test(new Adder(w, withCarry = withCarry)) { c =>
+      // val inputInts =
+      //   for (n <- Gen.chooseNum(0L, Math.pow(2, w).toLong - 1, 1))
+      //     yield BigInt(n)
 
-      val w = 64
-      test(new Adder(w)) { c =>
-        c.io.in.initSource().setSourceClock(c.clock)
-        c.io.out.initSink().setSinkClock(c.clock)
-
-        val inputInts = for (n <- Gen.chooseNum(0L, Math.pow(2, w).toLong - 1, 1)) yield BigInt(n)
-        forAll(inputInts, inputInts) { (a: BigInt, b: BigInt) =>
-          fork {
-            c.io.in.enqueue(new AdderInput(w).Lit(_.x -> a.U, _.y -> b.U, _.cin -> 0.B))
-            c.clock.step(1)
-          }.fork {
-            c.io.out.expectDequeue(add(a, b).U)
-          }.join()
-        }
-      }
+      val inputs = Seq.fill(numTests)(
+        if (withCarry)
+          new AdderInput(w, withCarry)
+            .Lit(_.x -> BigInt(w, rnd).U, _.y -> BigInt(w, rnd).U, _.cin.get -> BigInt(1, rnd).U)
+        else
+          new AdderInput(w, withCarry)
+            .Lit(_.x -> BigInt(w, rnd).U, _.y -> BigInt(w, rnd).U)
+      )
+      fork {
+        c.io.in.enqueueSeq(inputs)
+      }.fork {
+        c.io.out.expectDequeueSeq(
+          inputs.map(i => (i.x.litValue + i.y.litValue).U + i.cin.getOrElse(0.U))
+        )
+      }.join()
+    }
 //    }
   }
 }

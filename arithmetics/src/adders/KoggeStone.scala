@@ -1,12 +1,10 @@
 package adders
 
 import chisel3._
-import chisel3.experimental.chiselName
 
 import scala.annotation.tailrec
 
-@chiselName
-class KoggeStone[T <: Bits with Num[T]](carryOpAsModule: Boolean = false) extends PrefixAdder[T](carryOpAsModule) {
+trait KoggeStone[T <: Data] extends PrefixAdder[T] {
   override def prefix(in: Seq[PGBundle]): Seq[PGBundle] = {
     println(s"KoggeStone of width ${in.length}")
 
@@ -21,3 +19,5 @@ class KoggeStone[T <: Bits with Num[T]](carryOpAsModule: Boolean = false) extend
     genLevels(in)
   }
 }
+
+class KSAdder(val width: Int, val withCin: Boolean = false) extends BitsPrefixAdderModule with KoggeStone[Bool] {}

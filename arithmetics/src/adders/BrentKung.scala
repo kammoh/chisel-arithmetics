@@ -1,11 +1,8 @@
 package adders
 
 import chisel3._
-import chisel3.experimental.chiselName
 
-
-@chiselName
-class BrentKung[T <: Bits with Num[T]](carryOpAsModule: Boolean = false) extends PrefixAdder[T](carryOpAsModule) {
+trait BrentKung[T <: Data] extends PrefixAdder[T] {
 
   override def prefix(x: Seq[PGBundle]): Seq[PGBundle] = {
 
@@ -26,4 +23,8 @@ class BrentKung[T <: Bits with Num[T]](carryOpAsModule: Boolean = false) extends
     }
   }
 
+}
+
+class BKAdder(val width: Int, val withCin: Boolean) extends BitsPrefixAdderModule with BrentKung[Bool] {
+  def this(width: Int) = this(width, false)
 }
