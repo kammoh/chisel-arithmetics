@@ -26,12 +26,14 @@ with open(bindfile, "r", encoding="utf8") as f:
 with open(args.file, "r", encoding="utf8") as f:
     content = f.read()
     for module_name, submodule_inst in instances:
-        content = re.sub(
+        # print(f"inserting bind for {module_name}")
+        (content, n) = re.subn(
             r"(.*module\s+" + module_name + r"\s*\(.*)(endmodule)",
             rf"\1\n  initial assume(reset);\n\n{indent(submodule_inst, "  ")}\n\2",
             content,
             flags=re.MULTILINE | re.DOTALL,
-    )
+        )
+        assert n == 1
 
 
 if args.output:

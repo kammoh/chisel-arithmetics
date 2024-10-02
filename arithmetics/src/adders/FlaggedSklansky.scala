@@ -4,10 +4,10 @@ import chisel3._
 import chisel3.util._
 
 class FlaggedSklanskyAdder(val width: Int, val withCin: Boolean = false)
-    extends BitsPrefixAdderModule
+    extends BitsAdderModule
     with FlaggedSklansky[Bool] {}
 
-trait FlaggedSklansky[T <: Data] extends Adder[T] {
+trait FlaggedSklansky[T] extends AdderGraph[T] {
 
   /** @param a
     * @param b

@@ -2,17 +2,9 @@ package adders
 
 import chisel3._
 
-trait BitsPerfixAdder extends BitsAdder with PrefixAdder[Bool] {
-
-  def prefix(x: Seq[PGBundle]): Seq[PGBundle] = {
-    throw new NotImplementedError("prefix method not implemented")
-    x
-  }
-}
-
 trait BitsAdder extends Adder[Bool] {
 
-  def gen = Bool()
+  def zero = 0.B
 
   def add(a: UInt, b: UInt, cin: Option[Bool]): UInt = {
     require(a.widthKnown && b.widthKnown, "Inputs must have known widths")
