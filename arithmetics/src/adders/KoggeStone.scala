@@ -5,27 +5,24 @@ import chisel3._
 import scala.annotation.tailrec
 
 trait KoggeStone[T <: Data] extends PrefixAdder[T] with AdderGraph[T] { self: Module =>
-  
+
   override def buildPrefixAdder(in: Seq[(Option[T], Option[T])]): Seq[(Option[T], Option[T])] = {
     println(s"KoggeStone of width ${in.length}")
 
     @tailrec
     def genLevels(in: Seq[(Option[T], Option[T])], level: Int = 1): Seq[(Option[T], Option[T])] = {
-      if (level < in.length)
+      val twoToLevel = 1 << (level - 1)
+      if (twoToLevel < in.length)
         genLevels(
-          in.take(level) ++ in.zipWithIndex.zip(in.drop(level)).map { case ((left, j), right) =>
-            mkCell(left, right, level, j + level, j)
-          }, // { case (right, left) => blackCell(right, left) },
-          2 * level
+          in.take(twoToLevel) ++ in.drop(twoToLevel).zip(in).zipWithIndex.map { case ((left, right), j) =>
+            mkCell(if (j < twoToLevel) GrayCellT else BlackCellT, left, right, level, j + twoToLevel, j)
+          },
+          level + 1
         )
       else
         in
     }
-
-    val ret = genLevels(in)
-
-    save(s"${desiredName}.drawio")
-    ret
+    genLevels(in)
   }
 }
 

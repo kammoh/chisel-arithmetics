@@ -52,7 +52,18 @@ trait HasRandLedger { self: Module =>
   }
 }
 
-trait MaskedAdder extends Adder[SharedBool] with HasRandLedger { self: Module =>
+trait MaskedAdderBase[T] extends Adder[T] {
+  def order: Int
+
+  def width: Int
+
+  def numShares: Int
+
+  override def genG(p: Option[T], g: Option[T], c: Option[T]): Option[T] =
+    toffoli(p, c, g)
+}
+
+trait MaskedAdder extends MaskedAdderBase[SharedBool] with HasRandLedger { self: Module =>
 
   def order: Int
 
@@ -80,7 +91,10 @@ trait MaskedAdder extends Adder[SharedBool] with HasRandLedger { self: Module =>
 
   override def and(a: SharedBool, b: SharedBool): SharedBool = HPC2.and2(a, b, reqRands(randBitsPerAnd2), randInValid)
 
-  val useAnd3 = true
+  val useAnd3 = false
+
+  override def toffoli(a: SharedBool, b: SharedBool, c: SharedBool): SharedBool =
+    HPC2.toffoli(a, b, c, reqRands(randBitsPerAnd2), randInValid)
 
   override def and3(a: SharedBool, b: SharedBool, c: SharedBool): SharedBool =
     if (useAnd3) HPC2.and3(a, b, c, reqRands(randBitsPerAnd3), randInValid) else super.and3(a, b, c)

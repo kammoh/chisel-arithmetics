@@ -14,9 +14,6 @@ trait BitsAdder extends Adder[Bool] {
     VecInit(add(a.asBools, b.asBools, cin)).asUInt
   }
 
-  def grayCellU(p: UInt, g: UInt, c: Bool): UInt = {
-    VecInit(p.asBools.zip(g.asBools).map { case (pj, gj) => genG(pj, gj, c) }).asUInt
-  }
 
   override def xor(a: Bool, b: Bool): Bool = a ^ b
   override def and(a: Bool, b: Bool): Bool = a & b

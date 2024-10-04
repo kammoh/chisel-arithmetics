@@ -5,10 +5,8 @@ import chisel3.experimental.skipPrefix
 
 trait BrentKung[T <: Data] extends PrefixAdder[T] { self: Module =>
 
-  override def buildPrefixAdder(firstLayer: Seq[(Option[T], Option[T])]): Seq[(Option[T], Option[T])] = {
-    val (ret, depths) = buildPrefixAdderRec(firstLayer.map((_, 0)), 0).unzip
-
-    ret
+  override def buildPrefixAdder(pg0: Seq[(Option[T], Option[T])]): Seq[(Option[T], Option[T])] = {
+    buildPrefixAdderRec(pg0.map((_, 0)), 0).unzip._1
   }
 
   def buildPrefixAdderRec(prev: Seq[((Option[T], Option[T]), Int)], level: Int): Seq[((Option[T], Option[T]), Int)] = {

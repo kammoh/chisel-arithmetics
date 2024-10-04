@@ -20,7 +20,6 @@ abstract class BitsAdderModule extends Module with BitsAdder {
     clzName + (if (clzName.toLowerCase.endsWith("adder")) "" else "Adder") + width
   }
 
-  // atModuleBodyEnd {
   io.sum :#= add(io.a, io.b, io.cin)
 
   if (withAsserts) {

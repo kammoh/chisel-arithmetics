@@ -14,9 +14,9 @@ trait FlaggedSklansky[T] extends AdderGraph[T] {
     * @return
     *   (P, G)
     */
-  def init(a: Seq[T], b: Seq[T]): (Seq[T], Seq[T]) = (xor(a, b), and(a, b))
+  def init(a: Seq[T], b: Seq[T]): (Seq[Option[T]], Seq[Option[T]]) = (xor(a, b).map(Some(_)), and(a, b).map(Some(_)))
 
-  def nextLayer(p: Seq[T], g: Seq[T], i: Int): (Seq[T], Seq[T]) = {
+  def nextLayer(p: Seq[Option[T]], g: Seq[Option[T]], i: Int): (Seq[Option[T]], Seq[Option[T]]) = {
 
     val l = 1 << i
     p.zip(g)
@@ -46,6 +46,6 @@ trait FlaggedSklansky[T] extends AdderGraph[T] {
       }
     val gBar = pk.zip(gk).map { case (pj, gj) => genG(pj, gj, cin) }
 
-    cin.map { c => xor(c +: gBar, p0) }.getOrElse(p0.head +: xor(gBar, p0.tail))
+    xorSeq(cin +: gBar, p0).map(_.getOrElse(zero)) /// }.getOrElse(p0.head +: xor(gBar, p0.tail))
   }
 }

@@ -5,8 +5,6 @@ import chisel3.util._
 
 import chest._
 import chest.masking._
-import chisel3.util.experimental.InlineInstance
-import chisel3.util.experimental.FlattenInstance
 
 object HPC2 {
 
@@ -39,8 +37,13 @@ object HPC2 {
 
     def optReg[T <: Data](input: T, en: Bool = en0): T = if (pipelined || balanced) RegEnable(input, en) else input
 
-    def reg[T <: Data](input: T, en: Bool): T =
-      markDontTouch(RegEnable(Mux(clear, 0.U.asTypeOf(input), markDontTouch(input)), en | clear))
+    def balanceReg[T <: Data](input: T, en: Bool = en0): T = if (balanced) RegEnable(input, en) else input
+
+    def reg[T <: Data](input: T, en: Bool): T = if (clear.isLit) {
+      assert(clear.litValue == 0, "constant clear must be 0")
+      markDontTouch(RegEnable(markDontTouch(WireDefault(input)), en))
+    } else
+      markDontTouch(RegEnable(markDontTouch(Mux(clear, 0.U.asTypeOf(input), input)), en | clear))
 
     def r(i: Int, j: Int): Bool = {
       require(0 <= i && i < numShares)
@@ -53,13 +56,13 @@ object HPC2 {
     }
 
     SharedBool.from(Seq.tabulate(numShares) { i =>
-      val a_i = if (balanced) optReg(a.getShare(i)) else a.getShare(i)
-      val b_i = reg(b.getShare(i), en0) // <-- probably essential for security TODO verify
+      val a_i = balanceReg(a.getShare(i))
+      val b_i = optReg(b.getShare(i)) // <-- probably essential for security TODO verify
       (
         // same-domain terms
         (0 until numShares).map { j =>
-          !a_i & (if (i == j) b_i else reg(r(i, j), en0))
-        }.reduce(_ & _) +:
+          (if (i == j) a_i & b_i else !a_i & reg(r(i, j), en0))
+        }.reduce(_ ^ _) +:
           // cross-domain terms
           (0 until numShares).collect {
             case j if j != i =>
@@ -69,8 +72,86 @@ object HPC2 {
     })
   }
 
-  def requiredRandBits(numShares: Int, numInputs: Int) = {
-    numShares * (numShares - 1) / 2 + (numInputs - 2) * numShares * (numShares - 1) // FIXME!!! WRONG!! TEMPORARY!!!
+  /** ==Toffoli gate==
+    *
+    * Computes c ^ (a & b)
+    *
+    * @param a
+    *   The first irst AND input. Its delay to the output is 1 cycle.
+    * @param b
+    *   The second AND input. Its delay to the output is 2 cycles.
+    * @param c
+    *   delay 1 XOR input
+    * @param rand
+    * @param en
+    * @param clear
+    * @return
+    *   [c ^ (a & [b])]
+    * @note
+    * ==Output delay==
+    *   - from `a`, `c`: 1 cycle
+    *   - from `b`: 2 cycles
+    */
+  def toffoli(
+    a: SharedBool,
+    b: SharedBool,
+    c: SharedBool,
+    rand: Vec[Bool],
+    randValid: Bool,
+    clear: Bool = 0.B,
+    enable: Option[Bool] = None,
+    pipelined: Boolean = true, // if not pipelined, the inputs need to remain stable for 2 cycles
+    balanced: Boolean = false): SharedBool = {
+    val numShares = a.numShares
+    require(numShares == b.numShares)
+
+    val requiredRandBits = numShares * (numShares - 1) / 2
+    require(rand.length == requiredRandBits, s"rand.length=${rand.length} requiredRandBits=${requiredRandBits}")
+
+    val en0 = enable.map(_ & randValid).getOrElse(randValid)
+    val en1 = enable.getOrElse(RegNext(en0))
+
+    // register is required for correctness, based on the pipelining or balancedness
+    def optReg[T <: Data](input: T, en: Bool = en0): T = if (pipelined || balanced) RegEnable(input, en) else input
+
+    def balanceReg[T <: Data](input: T, en: Bool = en0): T = if (balanced) RegEnable(input, en) else input
+
+    def reg[T <: Data](input: T, en: Bool): T = if (clear.isLit) {
+      assert(clear.litValue == 0, "constant clear must be 0")
+      markDontTouch(RegEnable(markDontTouch(WireDefault(input)), en))
+    } else
+      markDontTouch(RegEnable(markDontTouch(Mux(clear, 0.U.asTypeOf(input), input)), en | clear))
+
+    def r(i: Int, j: Int): Bool = {
+      if (j < i)
+        r(j, i)
+      else {
+        require(0 <= i && i < numShares && 0 <= j && j < numShares)
+        require(j != i)
+        val k = numShares * i - i * (i + 1) / 2 + (j - i - 1)
+        rand(k)
+      }
+    }
+
+    SharedBool.from(Seq.tabulate(numShares) { i =>
+      val a_i = if (balanced) optReg(a.getShare(i)) else a.getShare(i)
+      val b_i = optReg(b.getShare(i)) // <-- probably essential for security TODO verify
+      (
+        // same-domain terms
+        (balanceReg(c.getShare(i)) +: (0 until numShares).map { j =>
+          (if (i == j) a_i & b_i else !a_i & reg(r(i, j), en0))
+        }).reduce(_ ^ _) +:
+          // cross-domain terms
+          (0 until numShares).collect {
+            case j if j != i =>
+              a_i & reg(b.getShare(j) ^ r(i, j), en0)
+          }
+      ).map(reg(_, en1)).reduce(_ ^ _)
+    })
+  }
+
+  def requiredRandBits(numShares: Int, multDegree: Int = 2) = {
+    numShares * (numShares - 1) / 2 + (multDegree - 2) * numShares * (numShares - 1) // FIXME!!! WRONG!! TEMPORARY!!!
   }
 
   /** @param a
@@ -235,9 +316,9 @@ object HPC2 {
 
 }
 
-class HPC2() extends Module {
+class Hpc2Module extends Module {
   val order: Int = 1
-  val numInputs: Int = 3
+  val numInputs: Int = 2
   require(order >= 1, "masking order must be at least 1")
   require(numInputs > 1, "number of inputs must be at least 2")
   // require(width > 0, "width must be at least 1")
@@ -282,51 +363,35 @@ class HPC2() extends Module {
   }
 }
 
-class VerifModule(numCycles: Int) extends Module with FlattenInstance with InlineInstance {
+class ToffoliModule extends Module {
+  val order: Int = 1
+  require(order >= 1, "masking order must be at least 1")
 
-  val valid = IO(Output(Bool()))
+  override def desiredName: String = simpleClassName(this.getClass()) + s"_order${order}"
 
-  val inner = Module(new VerifBBox(numCycles)).io
-  inner.clock := clock
-  inner.reset := reset
-  valid := inner.valid
+  val numShares = order + 1
 
-  class VerifBBox(numCycles: Int) extends BlackBox with HasBlackBoxInline {
-    val io = IO(new Bundle {
-      val reset = Input(Reset())
-      val clock = Input(Clock())
-      val valid = Output(Bool())
-    })
-    // chisel3.Intrinsic("circt_init", VERIF__counter.cloneType, Seq(VERIF__counter))
+  def gen = SharedBool(numShares)
 
-    override def desiredName: String = simpleClassName(this.getClass()) + numCycles
+  val io = IO(new Bundle {
+    val a = Input(gen)
+    val b = Input(gen)
+    val c = Input(gen)
+    val rand = Flipped(Valid(Vec(HPC2.requiredRandBits(numShares), Bool())))
+    val out = Output(gen)
+  })
 
-    setInline(
-      desiredName + ".sv",
-      s"""
-         |module ${desiredName} #(
-         |  parameter FORMAL_START_CYCLE = $numCycles
-         |) (
-         |  input  clock,
-         |  input  reset,
-         |  output logic valid
-         |);
-         |
-         |`ifndef SYNTHESIS
-         |`ifdef FORMAL
-         |  reg [$$clog2(FORMAL_START_CYCLE + 1)-1:0] VERIF__counter = 0;
-         |  always @(posedge clock) begin
-         |    if (!reset && !valid) begin
-         |       VERIF__counter <= VERIF__counter + 1;
-         |    end
-         |  end
-         |  assign valid = VERIF__counter == FORMAL_START_CYCLE;
-         |`endif
-         |`endif
-         |
-         |endmodule
-     """.stripMargin
+  val balanced = false
+
+  io.out :#= HPC2.toffoli(io.a, io.b, io.c, io.rand.bits, io.rand.valid, balanced = balanced)
+
+  val verifDelay = Module(new VerifModule(2))
+
+  when(~reset.asBool & verifDelay.valid && ShiftRegister(io.rand.valid, 2)) {
+    // printf(p"verifDelay.valid\n")
+
+    assert(
+      io.out.shares.reduce(_ ^ _) === RegNext((io.a.unshared() & RegNext(io.b.unshared())) ^ io.c.unshared())
     )
-
   }
 }
