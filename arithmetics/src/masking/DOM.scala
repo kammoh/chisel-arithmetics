@@ -6,8 +6,11 @@ import chisel3.experimental.skipPrefix
 
 import chest.markDontTouch
 import chest.crossProduct
+import chest.masking.SharedBool
 
-object DOM {
+trait Gadget
+
+object DOM extends Gadget {
   def numRandBits(n: Int, t: Int): Int = (BigInt(t + 1).pow(n - 1).toInt - 1) * t
 
   def and(in: Seq[Vec[UInt]], rand: Vec[UInt], valid: Bool): Vec[UInt] = {
@@ -41,6 +44,52 @@ object DOM {
     assert(ppMap.size == numShares)
 
     VecInit((0 until numShares).map(ppMap))
+  }
+
+  /** @param a
+    *   input
+    * @param b
+    *   input
+    * @param rand
+    *   fresh random bits
+    * @return
+    *   masked a & b
+    */
+  def and(
+    a: SharedBool,
+    b: SharedBool,
+    rand: Vec[Bool],
+    randValid: Bool,
+    clear: Bool = 0.B,
+    pipelined: Boolean = true,
+    balanced: Boolean = false): SharedBool = {
+    val numShares = a.numShares
+    require(b.numShares == numShares)
+
+    val en = randValid
+
+    def reg[T <: Data](t: T): T = markDontTouch(RegEnable(markDontTouch(WireDefault(t)), en))
+
+    def optReg[T <: Data](input: T, en: Bool = en): T = if (pipelined || balanced) RegEnable(input, en) else input
+
+    def r(i: Int, j: Int): Bool = {
+      require(0 <= i && i < numShares)
+      require(0 <= j && j < numShares)
+      require(j != i)
+      if (j > i) {
+        val k = numShares * i - i * (i + 1) / 2 + (j - i - 1)
+        rand(k)
+      } else r(j, i)
+    }
+
+    SharedBool.from((0 until numShares).map { i =>
+      (0 until numShares).map { j =>
+        if (j == i)
+          optReg(a.getShare(i) & b.getShare(i))
+        else
+          reg(r(i, j) ^ (a.getShare(i) & b.getShare(j)))
+      }.reduce(_ ^ _)
+    })
   }
 }
 

@@ -33,7 +33,7 @@ trait HasRandLedger { self: Module =>
 
   def reqRand(): Bool = reqRand(1).asBool
 
-  def withRandValidInput: Boolean = true
+  def withRandValidInput: Boolean = false
 
   atModuleBodyEnd {
     val randBits = _randsLedger.length
@@ -46,9 +46,11 @@ trait HasRandLedger { self: Module =>
     }
     else
       noPrefix {
-        val rand = IO(Input(Vec(randBits, Bool())))
+        val rand = IO(Input(UInt(randBits.W))).suggestName("rand")
         _randsLedger.zipWithIndex.foreach { case (r, i) => r :#= rand(i) }
+        randInValid := 1.B
       }
+
   }
 }
 
@@ -85,22 +87,23 @@ trait MaskedAdder extends MaskedAdderBase[SharedBool] with HasRandLedger { self:
   // }
 
   val randBitsPerAnd2 = HPC2.requiredRandBits(numShares, 2)
-  val randBitsPerAnd3 = HPC2.requiredRandBits(numShares, 3)
+  // val randBitsPerAnd3 = HPC2.requiredRandBits(numShares, 3)
 
   override def xor(a: SharedBool, b: SharedBool): SharedBool = a ^ b
 
-  override def and(a: SharedBool, b: SharedBool): SharedBool = HPC2.and2(a, b, reqRands(randBitsPerAnd2), randInValid)
+  // override def and(a: SharedBool, b: SharedBool): SharedBool = HPC2.and2(a, b, reqRands(randBitsPerAnd2), randInValid)
+  override def and(a: SharedBool, b: SharedBool): SharedBool = DOM.and(a, b, reqRands(randBitsPerAnd2), randInValid)
 
   val useAnd3 = false
 
-  override def toffoli(a: SharedBool, b: SharedBool, c: SharedBool): SharedBool =
-    HPC2.toffoli(a, b, c, reqRands(randBitsPerAnd2), randInValid)
+  // override def toffoli(a: SharedBool, b: SharedBool, c: SharedBool): SharedBool =
+  //   DOM.toffoli(a, b, c, reqRands(randBitsPerAnd2), randInValid)
 
-  override def and3(a: SharedBool, b: SharedBool, c: SharedBool): SharedBool =
-    if (useAnd3) HPC2.and3(a, b, c, reqRands(randBitsPerAnd3), randInValid) else super.and3(a, b, c)
+  // override def and3(a: SharedBool, b: SharedBool, c: SharedBool): SharedBool =
+  //   if (useAnd3) HPC2.and3(a, b, c, reqRands(randBitsPerAnd3), randInValid) else super.and3(a, b, c)
 
-  override def and3Xor(a: SharedBool, b: SharedBool, c: SharedBool, d: SharedBool): SharedBool =
-    if (useAnd3) HPC2.and3Xor(a, b, c, d, reqRands(randBitsPerAnd3), randInValid) else super.and3Xor(a, b, c, d)
+  // override def and3Xor(a: SharedBool, b: SharedBool, c: SharedBool, d: SharedBool): SharedBool =
+  //   if (useAnd3) HPC2.and3Xor(a, b, c, d, reqRands(randBitsPerAnd3), randInValid) else super.and3Xor(a, b, c, d)
 
   override def not(a: SharedBool): SharedBool = ~a
 

@@ -122,9 +122,9 @@ trait AdderGraph[T] extends Adder[T] {
   def startX = 10
   def startY = 10
   def boxWidth = 30
-  def boxHeight = 30
+  def boxHeight = 20
   def horizontalSpacing = 20
-  def verticalSpacing = boxHeight + 30
+  def verticalSpacing = boxHeight + 25
 
   class Grapher(startX: Int, startY: Int, horizontalSpacing: Int, verticalSpacing: Int) {
 
@@ -309,7 +309,7 @@ trait AdderGraph[T] extends Adder[T] {
     right: Option[(CellNode, Edge)]) = {
     val height = cell match {
       case _: InCell => boxHeight / 2
-      case _ if cell.level == 0 => boxHeight / 2
+      // case _ if cell.level == 0 => boxHeight / 2
       case _: OutCell => boxHeight / 2
       case _: RegCell => boxHeight / 2
       case _ => boxHeight
@@ -348,9 +348,15 @@ trait AdderGraph[T] extends Adder[T] {
         (None, g)
       case (_, (None, gr)) =>
         addBox(GrayCell(i, j), graph.cellAbove(i, j).map(_ -> PG(pg)), graph.cellAt(i - 1, jr).map(_ -> G(gr)))
+          .setStyle(
+            "rounded" -> "1",
+          )
         grayCell(pg._1, pg._2, gr)
       case _ =>
         addBox(BlackCell(i, j), graph.cellAbove(i, j).map(_ -> PG(pg)), graph.cellAt(i - 1, jr).map(_ -> PG(pgr)))
+          .setStyle(
+            "rounded" -> "1",
+          )
         blackCell(pg, pgr)
     }
   }
@@ -361,6 +367,7 @@ trait AdderGraph[T] extends Adder[T] {
 
   def mkCell[C <: CellType](ct: C, pg: (Option[T], Option[T]), pgr: (Option[T], Option[T]), i: Int, j: Int, jr: Int)
     : (Option[T], Option[T]) = {
+      // println(s"mkCell $ct $i $j $jr")
     ct match {
       case NullIn =>
         addBox(InCell(i, j))
@@ -375,14 +382,23 @@ trait AdderGraph[T] extends Adder[T] {
         pgSum(pg._1, pgr._2)
 
       case HalfAdder =>
-        addBox(HA(i, j))
+        addBox(HA(i, j)).setLabel(
+          "HA"
+        ).setStyle(
+          "fillColor" -> "#ffffff"
+        )
         halfAdder(pg._1, pg._2)
 
       case FullAdder if pgr._2.isEmpty =>
         mkCell(HalfAdder, pg, None, i, j, jr)
 
       case FullAdder =>
-        addBox(FA(i, j), graph.cellAbove(i, j).map(_ -> AB(pg)), graph.cellAt(i - 1, jr).map(_ -> G(pg._2)))
+        addBox(FA(i, j), graph.cellAbove(i, j).map(_ -> AB(pg)), graph.cellAt(i - 1, jr).map(_ -> G(pg._2))).setLabel(
+          "FA"
+        ).setStyle(
+          "rounded" -> "1",
+          "fillColor" -> "#d3d3d3"
+        )
         fullAdder(pg._1, pg._2, pgr._2)
 
       case GrayCellT =>

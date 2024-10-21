@@ -4,9 +4,9 @@ import chisel3._
 import chisel3.util._
 
 import chest._
-import chest.masking._
+import chest.masking.SharedBool
 
-object HPC2 {
+object HPC2 extends Gadget {
 
   /** @param a
     *   low delay input
@@ -16,9 +16,11 @@ object HPC2 {
     * @param en
     * @param clear
     * @return
-    *   if balanced == false: output has delay of 1 cycle with respect to input `a` and 2 cycles with respect to `b`
+    *   masked a & b;
+    *
+    * if balanced == false: output has delay of 1 cycle with respect to input `a` and 2 cycles with respect to `b`
     */
-  def and2(
+  def and(
     a: SharedBool,
     b: SharedBool,
     rand: Vec[Bool],
@@ -35,15 +37,23 @@ object HPC2 {
     val en0 = randValid
     val en1 = RegNext(en0)
 
-    def optReg[T <: Data](input: T, en: Bool = en0): T = if (pipelined || balanced) RegEnable(input, en) else input
+    def optReg[T <: Data](input: T, en: Bool = en0): T =
+      reg(input, en) // if (pipelined || balanced) RegEnable(input, en) else input
 
-    def balanceReg[T <: Data](input: T, en: Bool = en0): T = if (balanced) RegEnable(input, en) else input
+    def balanceReg[T <: Data](input: T, en: Bool = en0): T =
+      reg(input, en) //  if (balanced) RegEnable(input, en) else input
 
-    def reg[T <: Data](input: T, en: Bool): T = if (clear.isLit) {
-      assert(clear.litValue == 0, "constant clear must be 0")
-      markDontTouch(RegEnable(markDontTouch(WireDefault(input)), en))
-    } else
-      markDontTouch(RegEnable(markDontTouch(Mux(clear, 0.U.asTypeOf(input), input)), en | clear))
+    def reg[T <: Data](input: T, en: Bool): T =
+      // if (clear.isLit) {
+      // assert(clear.litValue == 0, "constant clear must be 0")
+      if (en.isLit) {
+        assert(en.litValue == 1)
+        markDontTouch(RegNext(markDontTouch(WireDefault(input))))
+      } else {
+        markDontTouch(RegEnable(markDontTouch(WireDefault(input)), en))
+      }
+    // } else
+    // markDontTouch(RegEnable(markDontTouch(Mux(clear, 0.U.asTypeOf(input), input)), en | clear))
 
     def r(i: Int, j: Int): Bool = {
       require(0 <= i && i < numShares)
@@ -58,17 +68,19 @@ object HPC2 {
     SharedBool.from(Seq.tabulate(numShares) { i =>
       val a_i = balanceReg(a.getShare(i))
       val b_i = optReg(b.getShare(i)) // <-- probably essential for security TODO verify
-      (
-        // same-domain terms
-        (0 until numShares).map { j =>
-          (if (i == j) a_i & b_i else !a_i & reg(r(i, j), en0))
-        }.reduce(_ ^ _) +:
-          // cross-domain terms
-          (0 until numShares).collect {
-            case j if j != i =>
-              a_i & reg(b.getShare(j) ^ r(i, j), en0)
-          }
-      ).map(reg(_, en1)).reduce(_ ^ _)
+      markDontTouch(
+        (
+          // same-domain terms
+          (0 until numShares).map { j =>
+            (if (i == j) a_i & b_i else !a_i & reg(r(i, j), en0))
+          }.reduce(_ ^ _) +:
+            // cross-domain terms
+            (0 until numShares).collect {
+              case j if j != i =>
+                a_i & reg(b.getShare(j) ^ r(i, j), en0)
+            }
+        ).map(reg(_, en1)).reduce(_ ^ _)
+      )
     })
   }
 
@@ -329,9 +341,10 @@ class Hpc2Module extends Module {
 
   def gen = SharedBool(numShares)
 
-  val io = IO(new Bundle {
+  val io = FlatIO(new Bundle {
     val in = Input(Vec(numInputs, gen))
-    val rand = Flipped(Valid(Vec(HPC2.requiredRandBits(numShares, numInputs), Bool())))
+    // val rand = Flipped(Valid(Vec(HPC2.requiredRandBits(numShares, numInputs), Bool())))
+    val rand = Flipped(Vec(HPC2.requiredRandBits(numShares, numInputs), Bool()))
     val out = Output(gen)
   })
 
@@ -339,16 +352,18 @@ class Hpc2Module extends Module {
 
   numInputs match {
     case 2 =>
-      io.out :#= HPC2.and2(io.in(0), io.in(1), io.rand.bits, io.rand.valid, balanced = balanced)
-    case 3 =>
-      io.out :#= HPC2.and3(io.in(0), io.in(1), io.in(2), io.rand.bits, io.rand.valid, balanced = balanced)
+      // io.out :#= HPC2.and2(io.in(0), io.in(1), io.rand.bits, io.rand.valid, balanced = balanced)
+      io.out :#= HPC2.and(io.in(0), io.in(1), io.rand, randValid = 1.B, balanced = balanced)
+    // case 3 =>
+    //   io.out :#= HPC2.and3(io.in(0), io.in(1), io.in(2), io.rand.bits, io.rand.valid, balanced = balanced)
     case _ =>
       throw new NotImplementedError(s"numInputs=${numInputs}")
   }
 
   val verifDelay = Module(new VerifModule(2))
 
-  when(~reset.asBool & verifDelay.valid && ShiftRegister(io.rand.valid, 2)) {
+  // when(~reset.asBool & verifDelay.valid && ShiftRegister(io.rand.valid, 2)) {
+  when(~reset.asBool & verifDelay.valid) {
     // printf(p"verifDelay.valid\n")
 
     assert(
