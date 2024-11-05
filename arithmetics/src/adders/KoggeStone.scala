@@ -15,6 +15,7 @@ trait KoggeStone[T <: Data] extends PrefixAdder[T] with AdderGraph[T] { self: Mo
       if (twoToLevel < in.length)
         genLevels(
           in.take(twoToLevel) ++ in.drop(twoToLevel).zip(in).zipWithIndex.map { case ((left, right), j) =>
+            if (j < twoToLevel) println(s"level:$level left=${j + twoToLevel} right=${j}")
             mkCell(if (j < twoToLevel) GrayCellT else BlackCellT, left, right, level, j + twoToLevel, j)
           },
           level + 1

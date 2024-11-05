@@ -58,6 +58,37 @@ object drawio {
   case class Connection(con: nas.Connection) extends LayerElement(con) {
     def source = Node(con.getSource())
     def target = Node(con.getTarget())
+
+    def addPoint(x: Double, y: Double) = {
+
+      val connEl: org.w3c.dom.Element = con.getElement()
+
+      val mxGeometry = connEl.getFirstChild()
+      assert(mxGeometry.getNodeName() == "mxGeometry")
+
+      val geomChildren = mxGeometry.getChildNodes()
+      val doc = connEl.getOwnerDocument()
+      val array = (0 until geomChildren.getLength())
+        .map(geomChildren.item(_))
+        .collectFirst {
+          case child: org.w3c.dom.Element if child.getNodeName() == "Array" && child.getAttribute("as") == "points" =>
+            child
+        }
+        .getOrElse {
+          val array = doc.createElement("Array")
+          mxGeometry.appendChild(array)
+          array.setAttribute("as", "points")
+          array
+        }
+
+      array.appendChild {
+        val point = doc.createElement("mxPoint")
+        point.setAttribute("x", x.toString)
+        point.setAttribute("y", y.toString)
+        point
+      }
+
+    }
   }
 
   case class Page(page: nas.Page) extends LinkTarget(page) {
@@ -142,6 +173,9 @@ object drawio {
       createConnection(target).setStyle(style)
       this
     }
+
+    def outgoingConnections = node.getOutgoingConnections().asScala.map(Connection)
+    def incomingConnections = node.getIncomingConnections().asScala.map(Connection)
   }
 
   case class Layer(layer: nas.Layer) extends ModelElement(layer) {

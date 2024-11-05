@@ -11,8 +11,10 @@ import chest.masking.SharedBool
 trait Gadget
 
 object DOM extends Gadget {
-  def numRandBits(n: Int, t: Int): Int = (BigInt(t + 1).pow(n - 1).toInt - 1) * t
+  def andRandBits(numInputs: Int, t: Int): Int = BigInt(t + 1).pow(numInputs - 1).toInt * t / 2 // FIXME!!!
+  def andRandBits(t: Int): Int = (t + 1) * t / 2
 
+  /// FIXME not verified!
   def and(in: Seq[Vec[UInt]], rand: Vec[UInt], valid: Bool): Vec[UInt] = {
     val n = in.length
     val numShares = in.head.length
@@ -61,8 +63,7 @@ object DOM extends Gadget {
     rand: Vec[Bool],
     randValid: Bool,
     clear: Bool = 0.B,
-    pipelined: Boolean = true,
-    balanced: Boolean = false): SharedBool = {
+    pipelined: Boolean = true): SharedBool = {
     val numShares = a.numShares
     require(b.numShares == numShares)
 
@@ -70,7 +71,7 @@ object DOM extends Gadget {
 
     def reg[T <: Data](t: T): T = markDontTouch(RegEnable(markDontTouch(WireDefault(t)), en))
 
-    def optReg[T <: Data](input: T, en: Bool = en): T = if (pipelined || balanced) RegEnable(input, en) else input
+    def optReg[T <: Data](input: T, en: Bool = en): T = if (pipelined) RegEnable(input, en) else input
 
     def r(i: Int, j: Int): Bool = {
       require(0 <= i && i < numShares)
@@ -91,6 +92,67 @@ object DOM extends Gadget {
       }.reduce(_ ^ _)
     })
   }
+
+  /** ==Toffoli gate==
+    *
+    * Computes c ^ (a & b)
+    *
+    * @param a
+    *   AND input.
+    * @param b
+    *   AND input.
+    * @param c
+    *   XOR input.
+    * @param rand
+    * @param en
+    * @param clear
+    * @return
+    *   [c ^ (a & b)]
+    *
+    * @note
+    *   Output delay: 1 cycle
+    */
+  def toffoli(
+    a: SharedBool,
+    b: SharedBool,
+    c: SharedBool,
+    rand: Vec[Bool],
+    randValid: Bool,
+    clear: Bool = 0.B,
+    enable: Option[Bool] = None,
+    pipelined: Boolean = true, // if not pipelined, the inputs need to remain stable for 2 cycles
+    balanced: Boolean = false): SharedBool = {
+    val numShares = a.numShares
+    require(numShares == b.numShares)
+
+    val requiredRandBits = numShares * (numShares - 1) / 2
+    require(rand.length == requiredRandBits, s"rand.length=${rand.length} requiredRandBits=${requiredRandBits}")
+
+    val en = randValid
+
+    def reg[T <: Data](t: T): T = markDontTouch(RegEnable(markDontTouch(WireDefault(t)), en))
+
+    def optReg[T <: Data](input: T, en: Bool = en): T = if (pipelined || balanced) RegEnable(input, en) else input
+
+    def r(i: Int, j: Int): Bool = {
+      require(0 <= i && i < numShares)
+      require(0 <= j && j < numShares)
+      require(j != i)
+      if (j > i) {
+        val k = numShares * i - i * (i + 1) / 2 + (j - i - 1)
+        rand(k)
+      } else r(j, i)
+    }
+
+    SharedBool.from((0 until numShares).map { i =>
+      (0 until numShares).map { j =>
+        if (j == i)
+          optReg(c.getShare(i) ^ (a.getShare(i) & b.getShare(i)))
+        else
+          reg(r(i, j) ^ (a.getShare(i) & b.getShare(j)))
+      }.reduce(_ ^ _)
+    })
+  }
 }
 
 class DOM(n: Int, t: Int, width: Int) extends Module {
@@ -99,7 +161,7 @@ class DOM(n: Int, t: Int, width: Int) extends Module {
   require(width > 0, "width must be at least 1")
 
   val numShares = t + 1
-  val randBits = DOM.numRandBits(n, t)
+  val randBits = DOM.andRandBits(n, t)
 
   println(s"numInputs: $n, order: $t, width: $width, numShares: $numShares, randBits: ${randBits * width}")
 

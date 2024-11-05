@@ -13,12 +13,12 @@ object ivys {
     "edu.berkeley.cs::chiseltest" -> "7.0.0-M2+42-e6146b3f-SNAPSHOT",
     "org.scalatest::scalatest" -> "3.2.17+",
     "org.scalacheck::scalacheck" -> "1.17.0+",
-    "org.scalatestplus::scalacheck-1-17" -> "3.2.17.0",
+    "org.scalatestplus::scalacheck-1-17" -> "3.2.17+",
     "com.outr::scribe" -> "3.15.0",
-    "com.lihaoyi::pprint" -> "0.9.0",
-    "com.lihaoyi::mainargs" -> "0.7.0",
-    "com.lihaoyi::os-lib" -> "0.10.2",
-    "org.scala-lang.modules::scala-parallel-collections" -> "1.0.4",
+    "com.lihaoyi::pprint" -> "0.9.0+",
+    "com.lihaoyi::mainargs" -> "0.7.0+",
+    "com.lihaoyi::os-lib" -> "0.10.2+",
+    "org.scala-lang.modules::scala-parallel-collections" -> "1.0.4+",
     "org.scala-lang:scala-reflect" -> scalaVersion,
     "org.json4s::json4s-jackson" -> "4.0.7+",
     "org.json4s::json4s-native" -> "4.0.7+",
@@ -28,7 +28,7 @@ object ivys {
     "org.scalanlp::breeze" -> "2.1.0",
     "com.github.jnr:jnr-ffi" -> "2.2.16",
     "org.typelevel::spire" -> "0.18.0",
-    "org.nasdanika.core:drawio" -> "2024.9.0",
+    "org.nasdanika.core:drawio" -> "2024.10.0",
   )
 }
 

@@ -8,7 +8,6 @@ import chisel3.experimental.noPrefix
 import adders._
 
 import chest.masking._
-import masking.HPC2
 
 trait HasRandLedger { self: Module =>
 
@@ -33,22 +32,23 @@ trait HasRandLedger { self: Module =>
 
   def reqRand(): Bool = reqRand(1).asBool
 
-  def withRandValidInput: Boolean = false
+  def randAlwaysValid: Boolean = true
 
   atModuleBodyEnd {
     val randBits = _randsLedger.length
     println(s"randBits=${randBits}")
 
-    if (withRandValidInput) noPrefix {
-      val rand = IO(Flipped(Valid(UInt(randBits.W))))
-      _randsLedger.zipWithIndex.foreach { case (r, i) => r :#= rand.bits(i) }
-      randInValid := rand.valid
-    }
-    else
+    if (randAlwaysValid)
       noPrefix {
         val rand = IO(Input(UInt(randBits.W))).suggestName("rand")
         _randsLedger.zipWithIndex.foreach { case (r, i) => r :#= rand(i) }
         randInValid := 1.B
+      }
+    else
+      noPrefix {
+        val rand = IO(Flipped(Valid(UInt(randBits.W))))
+        _randsLedger.zipWithIndex.foreach { case (r, i) => r :#= rand.bits(i) }
+        randInValid := rand.valid
       }
 
   }
@@ -86,24 +86,15 @@ trait MaskedAdder extends MaskedAdderBase[SharedBool] with HasRandLedger { self:
   //   VecInit(p.asBools.zip(g.asBools).map { case (pj, gj) => genG(pj, gj, c) }).asUInt
   // }
 
-  val randBitsPerAnd2 = HPC2.requiredRandBits(numShares, 2)
-  // val randBitsPerAnd3 = HPC2.requiredRandBits(numShares, 3)
+  val gadget = DOM
 
+  val randBitsPerAnd2 = gadget.andRandBits(order)
   override def xor(a: SharedBool, b: SharedBool): SharedBool = a ^ b
 
-  // override def and(a: SharedBool, b: SharedBool): SharedBool = HPC2.and2(a, b, reqRands(randBitsPerAnd2), randInValid)
-  override def and(a: SharedBool, b: SharedBool): SharedBool = DOM.and(a, b, reqRands(randBitsPerAnd2), randInValid)
+  override def and(a: SharedBool, b: SharedBool): SharedBool = gadget.and(a, b, reqRands(randBitsPerAnd2), randInValid)
 
-  val useAnd3 = false
-
-  // override def toffoli(a: SharedBool, b: SharedBool, c: SharedBool): SharedBool =
-  //   DOM.toffoli(a, b, c, reqRands(randBitsPerAnd2), randInValid)
-
-  // override def and3(a: SharedBool, b: SharedBool, c: SharedBool): SharedBool =
-  //   if (useAnd3) HPC2.and3(a, b, c, reqRands(randBitsPerAnd3), randInValid) else super.and3(a, b, c)
-
-  // override def and3Xor(a: SharedBool, b: SharedBool, c: SharedBool, d: SharedBool): SharedBool =
-  //   if (useAnd3) HPC2.and3Xor(a, b, c, d, reqRands(randBitsPerAnd3), randInValid) else super.and3Xor(a, b, c, d)
+  override def toffoli(a: SharedBool, b: SharedBool, c: SharedBool): SharedBool =
+    gadget.toffoli(a, b, c, reqRands(randBitsPerAnd2), randInValid)
 
   override def not(a: SharedBool): SharedBool = ~a
 

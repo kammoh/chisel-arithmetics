@@ -34,7 +34,7 @@ trait BrentKung[T <: Data] extends PrefixAdder[T] { self: Module =>
           (None, right._2),
           l,
           two2Layer * (j + 1) - 1, // <- actual `j`
-          two2Layer * (j) - 1
+          two2Layer * j - 1
         ) -> l
       case i => midLayerOdds((i - 1) / 2) // Odd
     }

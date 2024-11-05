@@ -12,24 +12,32 @@ parser.add_argument("-i", "--inplace", help="Overwrite the input file", action="
 args = parser.parse_args()
 
 bindfile = args.bindfile or (args.file.parent / "bindfile.sv")
-    
+
 
 with open(bindfile, "r", encoding="utf8") as f:
     bind_content = f.read()
-    instances = []
+    instances: dict[str, list[str]] = dict()
     for m in re.findall(r"bind\s+(\w+)\s+([^;]+;)", bind_content, re.MULTILINE | re.DOTALL):
         assert m
         module_name = m[0]
         print(f"found bind for {module_name}")
         submodule_inst = m[1]
-        instances.append(m)
+        sub_insts = instances.get(module_name, [])
+        sub_insts.append(submodule_inst)
+        instances[module_name] = sub_insts
 with open(args.file, "r", encoding="utf8") as f:
     content = f.read()
-    for module_name, submodule_inst in instances:
-        # print(f"inserting bind for {module_name}")
+    for module_name, submodule_instances in instances.items():
+        inject = "\n\n".join(indent(si, "  ") for si in submodule_instances)
+        inject = "  initial assume(reset);\n\n" + inject
+        inject = (
+            "`ifndef SYNTHESIS\n`ifdef FORMAL\n"
+            + inject
+            + "\n`endif // FORMAL\n`endif // not SYNTHESIS"
+        )
         (content, n) = re.subn(
             r"(.*module\s+" + module_name + r"\s*\(.*)(endmodule)",
-            rf"\1\n  initial assume(reset);\n\n{indent(submodule_inst, "  ")}\n\2",
+            rf"\1\n{inject}\n\2",
             content,
             flags=re.MULTILINE | re.DOTALL,
         )

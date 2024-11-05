@@ -3,7 +3,7 @@ package adders
 import chisel3._
 import chisel3.util.log2Ceil
 
-trait LadnerFischer[T <: Data] extends PrefixAdder[T] { self: Module =>
+trait LadnerFischer[T] extends PrefixAdder[T] { self: Module =>
 
   override def buildPrefixAdder(pg: Seq[(Option[T], Option[T])]): Seq[(Option[T], Option[T])] = {
     val n = pg.length
@@ -14,7 +14,7 @@ trait LadnerFischer[T <: Data] extends PrefixAdder[T] { self: Module =>
       }
     ll.take(1) ++ ll.drop(1).grouped(2).zipWithIndex.flatMap {
       case (Seq(pg_r, pg_l), i) =>
-        Seq(pg_r, mkCell(GrayCellT, pg_l, pg_r, d + 1, 2 * i + 2, 2 * i + 1))
+        Seq(pg_r, mkCell(GrayCellT, pg_l, pg_r, if (i < n / 2) 1 else d + 1, 2 * i + 2, 2 * i + 1))
       case (s, _) => s
     }
 
@@ -26,7 +26,7 @@ trait LadnerFischer[T <: Data] extends PrefixAdder[T] { self: Module =>
       acc ++ grp.take(skip) ++ (skip until grp.size).map { k =>
         val j = grpIndex * 2 * skip + k
         val jj = grpIndex * 2 * skip + skip - 1
-        if ((k & 0x1) == 1)
+        if (k % 2 == 1)
           mkCell(if (grpIndex > 0) BlackCellT else GrayCellT, grp(k), grp(skip - 1), level + 1, j, jj)
         else grp(k)
       }

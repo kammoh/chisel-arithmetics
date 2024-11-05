@@ -34,9 +34,16 @@ case object NullIn extends CellType
 case object NullOut extends CellType
 
 trait CellNode {
-  def color: String
   def level: Int
   def offset: Int
+
+  def style: Map[String, String] = Map(
+    "fillColor" -> "#ffffff",
+    "strokeColor" -> "#000000",
+    "rounded" -> "1"
+  )
+
+  val label: Option[String] = None
 
   val incomings = Array.ofDim[(CellNode, Edge)](2)
   val outgoings = collection.mutable.ArrayBuffer[CellNode]()
@@ -55,27 +62,30 @@ trait CellNode {
 }
 
 case class BlackCell(level: Int, offset: Int) extends CellNode {
-  val color = "#000000"
+  override val style = super.style.updated("fillColor", "#000000")
 }
 case class GrayCell(level: Int, offset: Int) extends CellNode {
-  val color = "#cccccc"
+  override val style = super.style.updated("fillColor", "#cccccc")
 }
 
 case class HA(level: Int, offset: Int) extends CellNode {
-  val color = "#ffffff"
+  override val style = super.style.updated("fillColor", "#f4f4f4")
+  override val label: Option[String] = Some("HA")
 }
 case class FA(level: Int, offset: Int) extends CellNode {
-  val color = "#ffffff"
+
+  override val style = super.style.updated("fillColor", "#dce9f1")
+  override val label: Option[String] = Some("FA")
 }
 case class RegCell(level: Int, offset: Int) extends CellNode {
-  val color = "#FFF2CC" // yellow
+  override val style = super.style.updated("fillColor", "#FFF2CC") // yellow
 }
 
 case class InCell(level: Int, offset: Int) extends CellNode {
-  val color = "#ffffff"
+  override val style = super.style.updated("rounded", "0")
 }
 case class OutCell(level: Int, offset: Int) extends CellNode {
-  val color = "#ffffff"
+  override val style = super.style.updated("rounded", "0")
 }
 
 class Graph {
@@ -96,7 +106,11 @@ class Graph {
   }
 
   def cellAbove(level: Int, offset: Int): Option[CellNode] = {
-    if (level <= 0 || offset < 0 || level >= cells.size) return None
+    // println(s"   cellAbove $level $offset cells.size=${cells.size}")
+    if (level < 0 || offset < 0) {
+      println("  --- none")
+      return None
+    }
     (level - 1).to(0, -1).map(cells(_).get(offset)).collectFirst { case Some(value) =>
       value
     }
@@ -130,24 +144,6 @@ trait AdderGraph[T] extends Adder[T] {
 
     def getNodeOption(i: Int, j: Int): Option[Node] = nodes.get((i, j))
 
-    // def addNode(
-    //   i: Int,
-    //   j: Int,
-    //   width: Int,
-    //   height: Int,
-    //   verticalSpacing: Int,
-    //   horizontalSpacing: Int = horizontalSpacing,
-    //   n: Option[Int] = None): Node = {
-    //   addNodeAt(
-    //     i,
-    //     j,
-    //     startX + n.orElse(getN).map(_ - j).getOrElse(j) * (width + horizontalSpacing),
-    //     startY + i * verticalSpacing,
-    //     width,
-    //     height
-    //   )
-    // }
-
     def addNodeAt(
       i: Int,
       j: Int,
@@ -165,8 +161,6 @@ trait AdderGraph[T] extends Adder[T] {
       nodes((i, j)) = node
       node
     }
-
-    def strokeColor: String = "#000000"
 
     private val doc = new Document()
 
@@ -188,13 +182,6 @@ trait AdderGraph[T] extends Adder[T] {
       _n = Some(n)
     }
 
-    // def flipFinalGraph() = {
-    //   val n = nOrMaxJ
-    //   for (((_, j), node) <- nodes) {
-    //     node.setX(startX + (n - j) * (boxWidth + horizontalSpacing))
-    //   }
-    // }
-
     def getNodeAbove(i: Int, j: Int): Option[Node] =
       (i to 0 by -1).map(getNodeOption(_, j)).collectFirst { case Some(node) =>
         node
@@ -204,12 +191,12 @@ trait AdderGraph[T] extends Adder[T] {
       i: Int,
       j: Int,
       inRight: Int,
-      fillColor: String,
       width: Int,
       height: Int,
-      edgeStyle: Map[String, Any],
-      verticalSpacing: Int) = {
-      // println(s"Adding black box at ${i + 1}, $j")
+      verticalSpacing: Int,
+      nodeStyle: Map[String, Any],
+      label: Option[String],
+      edgeStyle: Map[String, Any]) = {
 
       val n = None
 
@@ -220,31 +207,41 @@ trait AdderGraph[T] extends Adder[T] {
         startY + i * verticalSpacing,
         width,
         height
-      ).setStyle(
-        "fillColor" -> fillColor,
-        "strokeColor" -> strokeColor,
-      )
-      // node.setLabel(s"{$i:$j}")
+      ).setStyle(nodeStyle)
+
+      label.foreach(node.setLabel)
+
       node.setTooltip(s"$i:$j")
-      getNodeAbove(i, j).foreach(
-        _.connect(
+      getNodeAbove(i, j).foreach { x =>
+        x.createConnection(
           node,
           edgeStyle ++ Map(
             "exitX" -> 0.25,
             "entryX" -> 0.25,
           )
         )
-      )
+      }
+
       if (inRight >= 0) {
-        getNodeAbove(i, inRight).foreach(
-          _.connect(
+        getNodeAbove(i, inRight).foreach { rightNode =>
+          val conn = rightNode.createConnection(
             node,
             edgeStyle ++ Map(
               "exitX" -> { if (inRight == j) 0.75 else 0.25 },
               "entryX" -> { if (inRight <= j) 0.75 else 0.25 },
             )
           )
-        )
+
+          if (inRight < j) {
+            // val outs =
+            //   rightNode.outgoingConnections.filter(_.target.y == node.y)
+            conn.addPoint(
+              rightNode.x + 0.25 * rightNode.width,
+              node.y - (verticalSpacing - height) / 2.0
+            )
+          }
+
+        }
       }
       node
     }
@@ -324,15 +321,16 @@ trait AdderGraph[T] extends Adder[T] {
       cell.level,
       cell.offset,
       right.map(_._1.offset).getOrElse(-1),
-      cell.color,
       boxWidth,
       height,
-      edgeStyle,
-      verticalSpacing = verticalSpacing
+      verticalSpacing = verticalSpacing,
+      nodeStyle = cell.style,
+      label = cell.label,
+      edgeStyle = edgeStyle,
     )
     cell match {
       case _: InCell => node.setY(node.y + boxHeight / 2)
-      case _ if cell.level == 0 => node.setY(node.y + boxHeight / 2)
+      // case _ if cell.level == 0 => node.setY(node.y + boxHeight / 2)
       case _: OutCell => node.setY(node.y - boxHeight / 2)
       case _ =>
     }
@@ -347,16 +345,10 @@ trait AdderGraph[T] extends Adder[T] {
       case ((None, g), (_, _)) =>
         (None, g)
       case (_, (None, gr)) =>
-        addBox(GrayCell(i, j), graph.cellAbove(i, j).map(_ -> PG(pg)), graph.cellAt(i - 1, jr).map(_ -> G(gr)))
-          .setStyle(
-            "rounded" -> "1",
-          )
+        addBox(GrayCell(i, j), graph.cellAbove(i, j).map(_ -> PG(pg)), graph.cellAbove(i, jr).map(_ -> G(gr)))
         grayCell(pg._1, pg._2, gr)
       case _ =>
-        addBox(BlackCell(i, j), graph.cellAbove(i, j).map(_ -> PG(pg)), graph.cellAt(i - 1, jr).map(_ -> PG(pgr)))
-          .setStyle(
-            "rounded" -> "1",
-          )
+        addBox(BlackCell(i, j), graph.cellAbove(i, j).map(_ -> PG(pg)), graph.cellAbove(i, jr).map(_ -> PG(pgr)))
         blackCell(pg, pgr)
     }
   }
@@ -367,7 +359,6 @@ trait AdderGraph[T] extends Adder[T] {
 
   def mkCell[C <: CellType](ct: C, pg: (Option[T], Option[T]), pgr: (Option[T], Option[T]), i: Int, j: Int, jr: Int)
     : (Option[T], Option[T]) = {
-      // println(s"mkCell $ct $i $j $jr")
     ct match {
       case NullIn =>
         addBox(InCell(i, j))
@@ -382,23 +373,14 @@ trait AdderGraph[T] extends Adder[T] {
         pgSum(pg._1, pgr._2)
 
       case HalfAdder =>
-        addBox(HA(i, j)).setLabel(
-          "HA"
-        ).setStyle(
-          "fillColor" -> "#ffffff"
-        )
+        addBox(HA(i, j))
         halfAdder(pg._1, pg._2)
 
       case FullAdder if pgr._2.isEmpty =>
         mkCell(HalfAdder, pg, None, i, j, jr)
 
       case FullAdder =>
-        addBox(FA(i, j), graph.cellAbove(i, j).map(_ -> AB(pg)), graph.cellAt(i - 1, jr).map(_ -> G(pg._2))).setLabel(
-          "FA"
-        ).setStyle(
-          "rounded" -> "1",
-          "fillColor" -> "#d3d3d3"
-        )
+        addBox(FA(i, j), graph.cellAbove(i, j).map(_ -> AB(pg)), graph.cellAt(i - 1, jr).map(_ -> G(pg._2)))
         fullAdder(pg._1, pg._2, pgr._2)
 
       case GrayCellT =>
