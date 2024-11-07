@@ -5,8 +5,12 @@ import chisel3.util._
 
 import chest._
 import chest.masking.SharedBool
+import chisel3.experimental.SourceInfo
 
 object HPC2 extends Gadget {
+  def andRandBits(t: Int): Int = (t + 1) * t / 2
+
+  def majorityRandBits(t: Int): Int = andRandBits(t)
 
   /** @param a
     *   low delay input
@@ -23,11 +27,12 @@ object HPC2 extends Gadget {
   def and(
     a: SharedBool,
     b: SharedBool,
-    rand: Vec[Bool],
+    rand: Seq[Bool],
     randValid: Bool,
     clear: Bool = 0.B,
     pipelined: Boolean = true,
-    balanced: Boolean = false): SharedBool = {
+    balanced: Boolean = false,
+  )(implicit sourceInfo: SourceInfo): SharedBool = {
     val numShares = a.numShares
     require(numShares == b.numShares)
 
@@ -37,23 +42,9 @@ object HPC2 extends Gadget {
     val en0 = randValid
     val en1 = RegNext(en0)
 
-    def optReg[T <: Data](input: T, en: Bool = en0): T =
-      reg(input, en) // if (pipelined || balanced) RegEnable(input, en) else input
+    def optReg[T <: Data](input: T, en: Bool = en0): T = if (pipelined || balanced) RegEnable(input, en) else input
 
-    def balanceReg[T <: Data](input: T, en: Bool = en0): T =
-      reg(input, en) //  if (balanced) RegEnable(input, en) else input
-
-    def reg[T <: Data](input: T, en: Bool): T =
-      // if (clear.isLit) {
-      // assert(clear.litValue == 0, "constant clear must be 0")
-      if (en.isLit) {
-        assert(en.litValue == 1)
-        markDontTouch(RegNext(markDontTouch(WireDefault(input))))
-      } else {
-        markDontTouch(RegEnable(markDontTouch(WireDefault(input)), en))
-      }
-    // } else
-    // markDontTouch(RegEnable(markDontTouch(Mux(clear, 0.U.asTypeOf(input), input)), en | clear))
+    def balanceReg[T <: Data](input: T, en: Bool = en0): T = if (balanced) RegEnable(input, en) else input
 
     def r(i: Int, j: Int): Bool = {
       require(0 <= i && i < numShares)
@@ -68,19 +59,19 @@ object HPC2 extends Gadget {
     SharedBool.from(Seq.tabulate(numShares) { i =>
       val a_i = balanceReg(a.getShare(i))
       val b_i = optReg(b.getShare(i)) // <-- probably essential for security TODO verify
-      markDontTouch(
-        (
-          // same-domain terms
-          (0 until numShares).map { j =>
-            (if (i == j) a_i & b_i else !a_i & reg(r(i, j), en0))
-          }.reduce(_ ^ _) +:
-            // cross-domain terms
-            (0 until numShares).collect {
-              case j if j != i =>
-                a_i & reg(b.getShare(j) ^ r(i, j), en0)
-            }
-        ).map(reg(_, en1)).reduce(_ ^ _)
-      )
+      // markDontTouch(
+      (
+        // same-domain terms
+        (0 until numShares).map { j =>
+          (if (i == j) a_i & b_i else !a_i & reg(r(i, j), en0))
+        }.reduce(_ ^ _) +:
+          // cross-domain terms
+          (0 until numShares).collect {
+            case j if j != i =>
+              a_i & reg(b.getShare(j) ^ r(i, j), en0)
+          }
+      ).map(reg(_, en1)).reduce(_ ^ _)
+      // )
     })
   }
 
@@ -96,7 +87,6 @@ object HPC2 extends Gadget {
     *   delay 1 XOR input
     * @param rand
     * @param en
-    * @param clear
     * @return
     *   [c ^ (a & [b])]
     * @note
@@ -108,9 +98,8 @@ object HPC2 extends Gadget {
     a: SharedBool,
     b: SharedBool,
     c: SharedBool,
-    rand: Vec[Bool],
+    rand: Seq[Bool],
     randValid: Bool,
-    clear: Bool = 0.B,
     enable: Option[Bool] = None,
     pipelined: Boolean = true, // if not pipelined, the inputs need to remain stable for 2 cycles
     balanced: Boolean = false): SharedBool = {
@@ -127,12 +116,6 @@ object HPC2 extends Gadget {
     def optReg[T <: Data](input: T, en: Bool = en0): T = if (pipelined || balanced) RegEnable(input, en) else input
 
     def balanceReg[T <: Data](input: T, en: Bool = en0): T = if (balanced) RegEnable(input, en) else input
-
-    def reg[T <: Data](input: T, en: Bool): T = if (clear.isLit) {
-      assert(clear.litValue == 0, "constant clear must be 0")
-      markDontTouch(RegEnable(markDontTouch(WireDefault(input)), en))
-    } else
-      markDontTouch(RegEnable(markDontTouch(Mux(clear, 0.U.asTypeOf(input), input)), en | clear))
 
     def r(i: Int, j: Int): Bool = {
       if (j < i)
@@ -162,6 +145,23 @@ object HPC2 extends Gadget {
     })
   }
 
+  def majority(a: SharedBool, b: SharedBool, c: SharedBool, rand: Seq[Bool], randValid: Bool, pipelined: Boolean = true)
+    : SharedBool = {
+    val numShares = a.numShares
+    require(b.numShares == numShares)
+    require(c.numShares == numShares)
+
+    toffoli(
+      b ^ c, // 1 cycle delay from carry
+      a ^ b, // 2 cycle delay
+      b,
+      rand,
+      randValid,
+      pipelined = pipelined,
+      balanced = false,
+    )
+  }
+
   def requiredRandBits(numShares: Int, multDegree: Int = 2) = {
     numShares * (numShares - 1) / 2 + (multDegree - 2) * numShares * (numShares - 1) // FIXME!!! WRONG!! TEMPORARY!!!
   }
@@ -180,7 +180,7 @@ object HPC2 extends Gadget {
     a: SharedBool,
     b: SharedBool,
     c: SharedBool,
-    rand: Vec[Bool],
+    rand: Seq[Bool],
     randValid: Bool,
     clear: Bool = 0.B,
     pipelined: Boolean = true,
@@ -262,7 +262,7 @@ object HPC2 extends Gadget {
     b: SharedBool,
     c: SharedBool,
     d: SharedBool,
-    rand: Vec[Bool],
+    rand: Seq[Bool],
     randValid: Bool,
     clear: Bool = 0.B,
     pipelined: Boolean = true,

@@ -7,7 +7,8 @@ import chisel3.experimental.noPrefix
 
 import adders._
 
-import chest.masking._
+import chest.masking.{SharedBool, Shared}
+import chisel3.experimental.SourceInfo
 
 trait HasRandLedger { self: Module =>
 
@@ -61,7 +62,7 @@ trait MaskedAdderBase[T] extends Adder[T] {
 
   def numShares: Int
 
-  override def genG(p: Option[T], g: Option[T], c: Option[T]): Option[T] =
+  override def genG(p: Option[T], g: Option[T], c: Option[T])(implicit sourceInfo: SourceInfo): Option[T] =
     toffoli(p, c, g)
 }
 
@@ -75,28 +76,20 @@ trait MaskedAdder extends MaskedAdderBase[SharedBool] with HasRandLedger { self:
 
   def zero = SharedBool.const(0.B, numShares)
 
-  // def add(a: Shared, b: Shared, cin: Option[Shared]): Shared = {
-  //   require(a.numShares ==  b.numShares, "Inputs must have same number of shares")
-  //   require(a.getWidth == b.getWidth, "Inputs must have the same width")
+  // def g: Gadget = DOM
+  def g: Gadget = HPC2
 
-  //   add(a.asB b, cin)
-  // }
+  def randBitsPerAnd2 = g.andRandBits(order)
 
-  // def grayCellU(p: Shared, g: Shared, c: Shared): Shared = {
-  //   VecInit(p.asBools.zip(g.asBools).map { case (pj, gj) => genG(pj, gj, c) }).asUInt
-  // }
+  override def xor(a: SharedBool, b: SharedBool)(implicit sourceInfo: SourceInfo): SharedBool = a ^ b
 
-  val gadget = DOM
+  override def and(a: SharedBool, b: SharedBool)(implicit sourceInfo: SourceInfo): SharedBool =
+    g.and(a, b, reqRands(randBitsPerAnd2), randInValid)
 
-  val randBitsPerAnd2 = gadget.andRandBits(order)
-  override def xor(a: SharedBool, b: SharedBool): SharedBool = a ^ b
+  override def toffoli(a: SharedBool, b: SharedBool, c: SharedBool)(implicit sourceInfo: SourceInfo): SharedBool =
+    g.toffoli(a, b, c, reqRands(randBitsPerAnd2), randInValid)
 
-  override def and(a: SharedBool, b: SharedBool): SharedBool = gadget.and(a, b, reqRands(randBitsPerAnd2), randInValid)
-
-  override def toffoli(a: SharedBool, b: SharedBool, c: SharedBool): SharedBool =
-    gadget.toffoli(a, b, c, reqRands(randBitsPerAnd2), randInValid)
-
-  override def not(a: SharedBool): SharedBool = ~a
+  override def not(a: SharedBool)(implicit sourceInfo: SourceInfo): SharedBool = ~a
 
   def add(a: Shared, b: Shared): Shared =
     SharedBool.concat(add(a.asBools, b.asBools, None))
@@ -104,6 +97,29 @@ trait MaskedAdder extends MaskedAdderBase[SharedBool] with HasRandLedger { self:
   override def desiredName: String = {
     val clzName = simpleClassName(this.getClass)
     clzName + (if (clzName.toLowerCase.endsWith("adder")) "" else "Adder") + s"_order${order}_w$width"
+  }
+
+  override def majority(
+    a: SharedBool,
+    b: SharedBool,
+    c: SharedBool
+  )(implicit sourceInfo: SourceInfo): SharedBool = {
+
+    g.majority(a, b, c, reqRands(g.majorityRandBits(order)), randInValid)
+
+  }
+
+  override def fullAdder(
+    a: Option[SharedBool],
+    b: Option[SharedBool],
+    cin: Option[SharedBool]
+  )(implicit sourceInfo: SourceInfo): (Option[SharedBool], Option[SharedBool]) = {
+    // val ref = reqRands(numShares - 1)
+    // val s = gadget.reg(xor(a, b, cin).map(_.refreshed(ref)))
+    val s = xor(a, b, cin)
+    // val g = majority(a, b, cin)
+    val g = majority(a, b, cin)
+    (s, g)
   }
 
 }

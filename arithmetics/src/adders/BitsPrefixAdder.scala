@@ -1,6 +1,7 @@
 package adders
 
 import chisel3._
+import chisel3.experimental.SourceInfo
 
 trait BitsAdder extends Adder[Bool] {
 
@@ -15,9 +16,9 @@ trait BitsAdder extends Adder[Bool] {
   }
 
 
-  override def xor(a: Bool, b: Bool): Bool = a ^ b
-  override def and(a: Bool, b: Bool): Bool = a & b
-  override def and3(a: Bool, b: Bool, c: Bool): Bool = a & b & c
-  override def not(a: Bool): Bool = ~a
+  override def xor(a: Bool, b: Bool)(implicit sourceInfo: SourceInfo): Bool = a ^ b
+  override def and(a: Bool, b: Bool)(implicit sourceInfo: SourceInfo): Bool = a & b
+  override def and3(a: Bool, b: Bool, c: Bool)(implicit sourceInfo: SourceInfo): Bool = a & b & c
+  override def not(a: Bool)(implicit sourceInfo: SourceInfo): Bool = ~a
 
 }

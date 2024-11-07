@@ -1,12 +1,14 @@
 package adders
 
+import chisel3.experimental.SourceInfo
+
 trait Adder[T] {
 
   def add(x: Seq[T], y: Seq[T], cin: Option[T] = None): Seq[T]
 
-  def xor(a: T, b: T): T
+  def xor(a: T, b: T)(implicit sourceInfo: SourceInfo): T
 
-  def xor(a: T, b: Option[T]): T = {
+  def xor(a: T, b: Option[T])(implicit sourceInfo: SourceInfo): T = {
     b.map(xor(a, _)).getOrElse(a)
   }
 
@@ -14,15 +16,15 @@ trait Adder[T] {
   //   a.map(xor(b, _)).getOrElse(b)
   // }
 
-  def xor(a: Option[T], b: Option[T]): Option[T] = {
+  def xor(a: Option[T], b: Option[T])(implicit sourceInfo: SourceInfo): Option[T] = {
     a.map(xor(_, b)).orElse(b)
   }
 
-  def xor(a: Option[T], b: Option[T], c: Option[T]): Option[T] = xor(xor(a, b), c)
+  def xor(a: Option[T], b: Option[T], c: Option[T])(implicit sourceInfo: SourceInfo): Option[T] = xor(xor(a, b), c)
 
-  def xor(a: T, b: T, c: T): T = xor(xor(a, b), c)
+  def xor(a: T, b: T, c: T)(implicit sourceInfo: SourceInfo): T = xor(xor(a, b), c)
 
-  def xor(a: T, b: T, c: Option[T]): T = xor(xor(a, b), c)
+  def xor(a: T, b: T, c: Option[T])(implicit sourceInfo: SourceInfo): T = xor(xor(a, b), c)
 
   def xor(a: Seq[T], b: Seq[T]): Seq[T] = (a zip b).map { case (ai, bi) => xor(ai, bi) }
 
@@ -30,9 +32,9 @@ trait Adder[T] {
 
   def xor(a: Seq[T], b: Seq[T], c: Seq[T]): Seq[T] = (a zip b zip c).map { case ((ai, bi), ci) => xor(ai, bi, ci) }
 
-  def and(a: T, b: T): T
+  def and(a: T, b: T)(implicit sourceInfo: SourceInfo): T
 
-  def and(a: Option[T], b: Option[T]): Option[T] = {
+  def and(a: Option[T], b: Option[T])(implicit sourceInfo: SourceInfo): Option[T] = {
     (a, b) match {
       case (Some(ai), Some(bi)) => Some(and(ai, bi))
       case _ => None
@@ -41,7 +43,7 @@ trait Adder[T] {
 
   def and(a: Seq[T], b: Seq[T]): Seq[T] = (a zip b).map { case (ai, bi) => and(ai, bi) }
 
-  def and3(a: T, b: T, c: T): T = and(a, and(b, c))
+  def and3(a: T, b: T, c: T)(implicit sourceInfo: SourceInfo): T = and(a, and(b, c))
 
   def and3(a: Seq[T], b: Seq[T], c: Seq[T]): Seq[T] = and(a, and(b, c))
 
@@ -58,7 +60,7 @@ trait Adder[T] {
     }
   }
 
-  def not(a: T): T
+  def not(a: T)(implicit sourceInfo: SourceInfo): T
 
   /** [Toffoli](https://en.wikipedia.org/wiki/Toffoli_gate) (CCNOT) gate
     *
@@ -70,11 +72,11 @@ trait Adder[T] {
     * @return
     *   c ^ (a & b)
     */
-  def toffoli(a: T, b: T, c: T): T = xor(c, and(a, b))
+  def toffoli(a: T, b: T, c: T)(implicit sourceInfo: SourceInfo): T = xor(c, and(a, b))
 
   // TODO: final?
   // We should really try only overridding the (T,T,T)->T methods instead
-  def toffoli(a: Option[T], b: Option[T], c: Option[T]): Option[T] = {
+  def toffoli(a: Option[T], b: Option[T], c: Option[T])(implicit sourceInfo: SourceInfo): Option[T] = {
     (a, b, c) match {
       case (Some(a), Some(b), Some(c)) =>
         Some(toffoli(a, b, c))
@@ -87,22 +89,38 @@ trait Adder[T] {
     }
   }
 
-  def majority(a: Option[T], b: Option[T], c: Option[T]): Option[T] = toffoli(xor(a, b), xor(b, c), b)
+  def majority(a: Option[T], b: Option[T], c: Option[T])(implicit sourceInfo: SourceInfo): Option[T] =
+    (a, b, c) match {
+      case (None, _, _) =>
+        and(b, c)
+      case (_, None, _) =>
+        and(a, c)
+      case (_, _, None) =>
+        and(a, b)
+      case (Some(a), Some(b), Some(c)) =>
+        Some(majority(a, b, c))
+    }
 
-  def majority(a: T, b: T, c: Option[T]): T = majority(Some(a), Some(b), c).getOrElse(zero)
+  // NOTE: a ^ b, b ^ c are NOT independent!!! Cannot be used with e.g., DOM gadget!!!
+  def majority(a: T, b: T, c: T)(implicit sourceInfo: SourceInfo): T = toffoli(xor(a, b), xor(b, c), b)
+
+  def majority(a: T, b: T, c: Option[T])(implicit sourceInfo: SourceInfo): T =
+    majority(Some(a), Some(b), c).getOrElse(zero)
 
   // (p & c) | g  <->
-  def genG(p: Option[T], g: Option[T], c: Option[T]): Option[T] =
+  def genG(p: Option[T], g: Option[T], c: Option[T])(implicit sourceInfo: SourceInfo): Option[T] =
     toffoli(p, c, g)
   // and3Xor(p, c, g.map(not), g)
 
-  def blackCell(pg: (Option[T], Option[T]), pgr: (Option[T], Option[T])): (Option[T], Option[T]) =
+  def blackCell(pg: (Option[T], Option[T]), pgr: (Option[T], Option[T]))(implicit sourceInfo: SourceInfo)
+    : (Option[T], Option[T]) =
     blackCell(pg._1, pg._2, pgr._1, pgr._2)
 
-  def blackCell(p: Option[T], g: Option[T], pr: Option[T], gr: Option[T]): (Option[T], Option[T]) =
+  def blackCell(p: Option[T], g: Option[T], pr: Option[T], gr: Option[T])(implicit sourceInfo: SourceInfo)
+    : (Option[T], Option[T]) =
     (and(p, pr), genG(p, g, gr))
 
-  def halfAdder(a: Option[T], b: Option[T]): (Option[T], Option[T]) = {
+  def halfAdder(a: Option[T], b: Option[T])(implicit sourceInfo: SourceInfo): (Option[T], Option[T]) = {
     (xor(a, b), and(a, b))
   }
 
@@ -110,13 +128,14 @@ trait Adder[T] {
     (xor(a, b), None)
   }
 
-  def fullAdder(a: Option[T], b: Option[T], cin: Option[T]): (Option[T], Option[T]) = {
+  def fullAdder(a: Option[T], b: Option[T], cin: Option[T])(implicit sourceInfo: SourceInfo): (Option[T], Option[T]) = {
     val s = xor(a, b, cin)
     val g = majority(a, b, cin)
     (s, g)
   }
 
-  def fullAdder(a: T, b: T, cin: Option[T]): (Option[T], Option[T]) = fullAdder(Some(a), Some(b), cin)
+  def fullAdder(a: T, b: T, cin: Option[T])(implicit sourceInfo: SourceInfo): (Option[T], Option[T]) =
+    fullAdder(Some(a), Some(b), cin)
 
   def grayCell(p: Option[T], g: Option[T], c: Option[T]): (Option[T], Option[T]) = (None, genG(p, g, c))
 

@@ -6,15 +6,16 @@ import chest.masking._
 
 import adders.PrefixAdder
 import chisel3.layers.Verification
+import chisel3.experimental.noPrefix
 
 abstract class BooleanMaskedAdderModule extends Module with MaskedAdder with PrefixAdder[SharedBool] {
-  val io = FlatIO(new Bundle {
+  val io = IO(new Bundle {
     val a = Input(Shared(numShares, width))
     val b = Input(Shared(numShares, width))
     val sum = Output(Shared(numShares, width + 1))
   })
 
-  io.sum :#= add(io.a, io.b)
+  io.sum :#= noPrefix { add(io.a, io.b) }
 
   // after the adder is built
   val depth = currentDepth
@@ -43,5 +44,7 @@ abstract class BooleanMaskedAdderModule extends Module with MaskedAdder with Pre
       )
 
     }
+
+  
   }
 }

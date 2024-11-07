@@ -1,9 +1,6 @@
 package masking
 package adder
 
-import chisel3._
-// import chisel3.util._
-
 import chest.masking._
 
 class KSAdder(val width: Int, val order: Int = 1) extends BooleanMaskedAdderModule with adders.KoggeStone[SharedBool] {

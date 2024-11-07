@@ -38,7 +38,7 @@ trait RippleCarry[T] extends PrefixAdder[T] { self: Module =>
       .tail
   }
 
-  def ll(pg0: Seq[(Option[T], Option[T])], lastPg: Seq[(Option[T], Option[T])]): Seq[Option[T]] = {
+  def lastLayerOption(pg0: Seq[(Option[T], Option[T])], lastPg: Seq[(Option[T], Option[T])]): Seq[Option[T]] = {
     val depth = currentDepth
     ((lastPg.zipWithIndex).map { case (pg, j) =>
       mkCell(NullOut, pg, None, depth, j)._1
@@ -46,7 +46,7 @@ trait RippleCarry[T] extends PrefixAdder[T] { self: Module =>
   }
 
   override def lastLayer(pg0: Seq[(Option[T], Option[T])], lastPg: Seq[(Option[T], Option[T])]): Seq[T] = {
-    ll(pg0, lastPg).map(_.getOrElse(zero))
+    lastLayerOption(pg0, lastPg).map(_.getOrElse(zero))
   }
 }
 

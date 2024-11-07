@@ -8,7 +8,8 @@ object ivys {
   // run `mill mill.scalalib.Dependency/showUpdates` to check for updates
   val ivyVersions = Map(
     "scala" -> scalaVersion,
-    "org.chipsalliance::chisel" -> "7.0.0-M2+",
+    // "org.chipsalliance::chisel" -> "7.0.0-M2+",
+    "org.chipsalliance::chisel" -> "7.0.0-M2+167-abf74afc-SNAPSHOT",
     "org.chipsalliance:::chisel-plugin" -> "$chisel",
     "edu.berkeley.cs::chiseltest" -> "7.0.0-M2+42-e6146b3f-SNAPSHOT",
     "org.scalatest::scalatest" -> "3.2.17+",
