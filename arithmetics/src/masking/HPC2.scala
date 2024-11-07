@@ -7,7 +7,8 @@ import chest._
 import chest.masking.SharedBool
 import chisel3.experimental.SourceInfo
 
-object HPC2 extends Gadget {
+
+case class HPC2(override val pipelined: Boolean = false, override val balanced: Boolean = false) extends Gadget {
   def andRandBits(t: Int): Int = (t + 1) * t / 2
 
   def majorityRandBits(t: Int): Int = andRandBits(t)
@@ -30,8 +31,6 @@ object HPC2 extends Gadget {
     rand: Seq[Bool],
     randValid: Bool,
     clear: Bool = 0.B,
-    pipelined: Boolean = true,
-    balanced: Boolean = false,
   )(implicit sourceInfo: SourceInfo): SharedBool = {
     val numShares = a.numShares
     require(numShares == b.numShares)
@@ -42,7 +41,7 @@ object HPC2 extends Gadget {
     val en0 = randValid
     val en1 = RegNext(en0)
 
-    def optReg[T <: Data](input: T, en: Bool = en0): T = if (pipelined || balanced) RegEnable(input, en) else input
+    def optReg[T <: Data](input: T): T = if (pipelined || balanced) RegEnable(input, en0) else input
 
     def balanceReg[T <: Data](input: T, en: Bool = en0): T = if (balanced) RegEnable(input, en) else input
 
@@ -100,9 +99,7 @@ object HPC2 extends Gadget {
     c: SharedBool,
     rand: Seq[Bool],
     randValid: Bool,
-    enable: Option[Bool] = None,
-    pipelined: Boolean = true, // if not pipelined, the inputs need to remain stable for 2 cycles
-    balanced: Boolean = false): SharedBool = {
+    enable: Option[Bool] = None): SharedBool = {
     val numShares = a.numShares
     require(numShares == b.numShares)
 
@@ -145,20 +142,17 @@ object HPC2 extends Gadget {
     })
   }
 
-  def majority(a: SharedBool, b: SharedBool, c: SharedBool, rand: Seq[Bool], randValid: Bool, pipelined: Boolean = true)
-    : SharedBool = {
+  def majority(a: SharedBool, b: SharedBool, c: SharedBool, rand: Seq[Bool], randValid: Bool): SharedBool = {
     val numShares = a.numShares
     require(b.numShares == numShares)
     require(c.numShares == numShares)
 
     toffoli(
-      b ^ c, // 1 cycle delay from carry
+      b ^ c, // 1 cycle delay from `c` (used for carry-in)
       a ^ b, // 2 cycle delay
       b,
       rand,
       randValid,
-      pipelined = pipelined,
-      balanced = false,
     )
   }
 
@@ -328,6 +322,7 @@ object HPC2 extends Gadget {
 
 }
 
+
 class Hpc2Module extends Module {
   val order: Int = 1
   val numInputs: Int = 2
@@ -341,10 +336,12 @@ class Hpc2Module extends Module {
 
   def gen = SharedBool(numShares)
 
+  val g = HPC2()
+
   val io = FlatIO(new Bundle {
     val in = Input(Vec(numInputs, gen))
     // val rand = Flipped(Valid(Vec(HPC2.requiredRandBits(numShares, numInputs), Bool())))
-    val rand = Flipped(Vec(HPC2.requiredRandBits(numShares, numInputs), Bool()))
+    val rand = Flipped(Vec(g.requiredRandBits(numShares, numInputs), Bool()))
     val out = Output(gen)
   })
 
@@ -353,7 +350,7 @@ class Hpc2Module extends Module {
   numInputs match {
     case 2 =>
       // io.out :#= HPC2.and2(io.in(0), io.in(1), io.rand.bits, io.rand.valid, balanced = balanced)
-      io.out :#= HPC2.and(io.in(0), io.in(1), io.rand, randValid = 1.B, balanced = balanced)
+      io.out :#= g.and(io.in(0), io.in(1), io.rand, randValid = 1.B)
     // case 3 =>
     //   io.out :#= HPC2.and3(io.in(0), io.in(1), io.in(2), io.rand.bits, io.rand.valid, balanced = balanced)
     case _ =>
@@ -388,17 +385,20 @@ class ToffoliModule extends Module {
 
   def gen = SharedBool(numShares)
 
+  val g = HPC2()
+
+
   val io = IO(new Bundle {
     val a = Input(gen)
     val b = Input(gen)
     val c = Input(gen)
-    val rand = Flipped(Valid(Vec(HPC2.requiredRandBits(numShares), Bool())))
+    val rand = Flipped(Valid(Vec(g.requiredRandBits(numShares), Bool())))
     val out = Output(gen)
   })
 
   val balanced = false
 
-  io.out :#= HPC2.toffoli(io.a, io.b, io.c, io.rand.bits, io.rand.valid, balanced = balanced)
+  io.out :#= g.toffoli(io.a, io.b, io.c, io.rand.bits, io.rand.valid)
 
   val verifDelay = Module(new VerifModule(2))
 

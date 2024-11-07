@@ -12,6 +12,15 @@ import chisel3.experimental.SourceInfo
 
 trait Gadget {
 
+  // if not pipelined, the inputs need to remain stable for the maximum delay
+  def pipelined: Boolean = true
+
+  /** force balanced delay from all inputs to the output by adding registers
+    *
+    * @return
+    */
+  def balanced: Boolean = false
+
   def reg[T <: Data](t: T, en: Bool = 1.B): T = markDontTouch(RegEnable(markDontTouch(WireDefault(t)), en))
   def reg[T <: Data](t: Option[T], en: Bool): Option[T] = t.map(reg(_, en))
   def reg[T <: Data](t: Option[T]): Option[T] = t.map(reg(_))
@@ -22,6 +31,8 @@ trait Gadget {
   } else
     markDontTouch(RegEnable(markDontTouch(Mux(clear, 0.U.asTypeOf(input), input)), en | clear))
 
+  def optReg[T <: Data](u: T, valid: Bool): T = if (pipelined) RegEnable(u, valid) else u
+
   def andRandBits(t: Int): Int
 
   def and(
@@ -30,8 +41,6 @@ trait Gadget {
     rand: Seq[Bool],
     randValid: Bool,
     clear: Bool = 0.B,
-    pipelined: Boolean = true,
-    balanced: Boolean = false,
   )(implicit sourceInfo: SourceInfo): SharedBool
 
   def toffoli(
@@ -40,25 +49,24 @@ trait Gadget {
     c: SharedBool,
     rand: Seq[Bool],
     randValid: Bool,
-    enable: Option[Bool] = None,
-    pipelined: Boolean = true, // if not pipelined, the inputs need to remain stable for 2 cycles
-    balanced: Boolean = false): SharedBool
+    enable: Option[Bool] = None): SharedBool
 
   def majorityRandBits(t: Int): Int
 
-  def majority(a: SharedBool, b: SharedBool, c: SharedBool, rand: Seq[Bool], randValid: Bool, pipelined: Boolean = true)
-    : SharedBool
+  def majority(a: SharedBool, b: SharedBool, c: SharedBool, rand: Seq[Bool], randValid: Bool): SharedBool
 
 }
 
-object DOM extends Gadget {
+case class DOM(override val pipelined: Boolean = false) extends Gadget {
+
+  override val balanced: Boolean = true
+
   def andRandBits(numInputs: Int, t: Int): Int = BigInt(t + 1).pow(numInputs - 1).toInt * t / 2 // FIXME!!!
   def andRandBits(t: Int): Int = (t + 1) * t / 2
 
   def majorityRandBits(t: Int): Int = andRandBits(t) + t
 
-  def majority(a: SharedBool, b: SharedBool, c: SharedBool, rand: Seq[Bool], randValid: Bool, pipelined: Boolean = true)
-    : SharedBool = {
+  def majority(a: SharedBool, b: SharedBool, c: SharedBool, rand: Seq[Bool], randValid: Bool): SharedBool = {
     val numShares = a.numShares
     require(b.numShares == numShares)
     require(c.numShares == numShares)
@@ -71,81 +79,7 @@ object DOM extends Gadget {
       b,
       rand.slice(numShares - 1, numShares - 1 + andRandBits(numShares - 1)),
       randValid,
-      pipelined = pipelined
     )
-
-    // and(
-    //   i0,
-    //   i1,
-    //   rand.slice(2 * numShares - 2, 2 * numShares - 2 + andRandBits(numShares - 1)),
-    //   randValid,
-    //   pipelined = pipelined
-    // ) ^ b
-
-    // val en = randValid
-
-    // def reg[T <: Data](t: T): T = super.reg(t, en)
-
-    // def optReg[T <: Data](input: T): T = if (pipelined) RegEnable(input, en) else input
-
-    // val a0 = a.getShare(0)
-    // val a1 = a.getShare(1)
-    // val b0 = b.getShare(0)
-    // val b1 = b.getShare(1)
-    // val c0 = c.getShare(0)
-    // val c1 = c.getShare(1)
-
-    // val r0 = rand(0)
-    // val r1 = rand(1)
-    // val r2 = rand(2)
-
-    // val x0 = reg(a0 ^ r0) & optReg(b1 ^ c1)
-    // val x1 = reg(b0 ^ r1) & optReg(c1 ^ a1)
-    // val x2 = reg(c0 ^ r2) & optReg(b1 ^ a1)
-
-    // SharedBool.from(
-    //   Seq(
-    //     //
-    //     optReg(
-    //       a0 & b0 ^ a0 & c0 ^ b0 & c0
-    //     ), // ^ reg(!b1 & r0) ^ reg(!a1 & r2) ^ reg(!c1 & r1),  ^ !c1 & r0  ^ !a1 & r1  ^ !b1 & r2
-    //     optReg(a1 & b1 ^ a1 & c1 ^ b1 & c1) ^ x0 ^ x1 ^ x2
-    //   )
-    // )
-  }
-
-  /// FIXME not verified!
-  def and(in: Seq[Vec[UInt]], rand: Seq[UInt], valid: Bool): Vec[UInt] = {
-    val n = in.length
-    val numShares = in.head.length
-    require(in.forall(_.length == numShares), "all inputs must have the same number of shares")
-
-    val pipelined = true
-
-    def optReg(u: UInt): UInt = if (pipelined) RegEnable(u, valid) else u
-
-    val ppMap = skipPrefix {
-      crossProduct(in.map(_.zipWithIndex)).groupMapReduce(_.head._2) { case zz =>
-        val (inputs, shareIds) = zz.unzip
-        val p = inputs.reduce(_ & _).suggestName(s"p_${shareIds.mkString("_")}")
-        val ri = shareIds.foldLeft(0)((acc, j) => acc * numShares + (j + numShares - shareIds.head) % numShares)
-        val pp =
-          if (shareIds.distinct.length == 1) optReg(p)
-          else {
-            val r =
-              if (shareIds.head == numShares - 1) rand(ri - 1)
-              else rand(ri + ((BigInt(numShares).pow(n - 1).toInt - 1) * (shareIds.head % 2)) - 1)
-
-            RegEnable(p ^ r, valid)
-          }
-        pp.suggestName(s"pp_${shareIds.mkString("_")}")
-        markDontTouch(pp)
-      }(_ ^ _)
-    }
-
-    assert(ppMap.size == numShares)
-
-    VecInit((0 until numShares).map(ppMap))
   }
 
   /** @param a
@@ -163,8 +97,6 @@ object DOM extends Gadget {
     rand: Seq[Bool],
     randValid: Bool,
     clear: Bool = 0.B,
-    pipelined: Boolean = true,
-    balanced: Boolean = false,
   )(implicit sourceInfo: SourceInfo): SharedBool = {
     val numShares = a.numShares
     require(b.numShares == numShares)
@@ -235,9 +167,7 @@ object DOM extends Gadget {
     c: SharedBool,
     rand: Seq[Bool],
     randValid: Bool,
-    enable: Option[Bool] = None,
-    pipelined: Boolean = true, // if not pipelined, the inputs need to remain stable for 2 cycles
-    balanced: Boolean = false): SharedBool = {
+    enable: Option[Bool] = None): SharedBool = {
     val numShares = a.numShares
     require(numShares == b.numShares)
 
@@ -269,15 +199,49 @@ object DOM extends Gadget {
       }.reduce(_ ^ _)
     })
   }
+
+/// FIXME not verified!
+  def and(in: Seq[Vec[UInt]], rand: Seq[UInt], valid: Bool): Vec[UInt] = {
+    val n = in.length
+    val numShares = in.head.length
+    require(in.forall(_.length == numShares), "all inputs must have the same number of shares")
+
+    def optReg[T <: Data](input: T): T = super.optReg(input, valid)
+
+    val ppMap = skipPrefix {
+      crossProduct(in.map(_.zipWithIndex)).groupMapReduce(_.head._2) { case zz =>
+        val (inputs, shareIds) = zz.unzip
+        val p = inputs.reduce(_ & _).suggestName(s"p_${shareIds.mkString("_")}")
+        val ri = shareIds.foldLeft(0)((acc, j) => acc * numShares + (j + numShares - shareIds.head) % numShares)
+        val pp =
+          if (shareIds.distinct.length == 1) optReg(p)
+          else {
+            val r =
+              if (shareIds.head == numShares - 1) rand(ri - 1)
+              else rand(ri + ((BigInt(numShares).pow(n - 1).toInt - 1) * (shareIds.head % 2)) - 1)
+
+            RegEnable(p ^ r, valid)
+          }
+        pp.suggestName(s"pp_${shareIds.mkString("_")}")
+        markDontTouch(pp)
+      }(_ ^ _)
+    }
+
+    assert(ppMap.size == numShares)
+
+    VecInit((0 until numShares).map(ppMap))
+  }
 }
 
-class DOM(n: Int, t: Int, width: Int) extends Module {
+class DOMModule(n: Int, t: Int, width: Int) extends Module {
   require(t >= 1, "masking order must be at least 1")
   require(n > 1, "number of inputs must be at least 2")
   require(width > 0, "width must be at least 1")
 
   val numShares = t + 1
-  val randBits = DOM.andRandBits(n, t)
+
+  val g = DOM()
+  val randBits = g.andRandBits(n, t)
 
   println(s"numInputs: $n, order: $t, width: $width, numShares: $numShares, randBits: ${randBits * width}")
 
@@ -287,7 +251,7 @@ class DOM(n: Int, t: Int, width: Int) extends Module {
     val out = Output(Valid(Vec(numShares, UInt(width.W))))
   })
 
-  io.out.bits :#= DOM.and(io.in, io.r.bits, io.r.valid)
+  io.out.bits :#= g.and(io.in, io.r.bits, io.r.valid)
   io.out.valid := RegNext(io.r.valid, 0.B)
 
   override def desiredName: String = s"DOM_n${n}_t${t}_w${width}"

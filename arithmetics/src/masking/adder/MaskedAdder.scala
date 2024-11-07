@@ -76,8 +76,8 @@ trait MaskedAdder extends MaskedAdderBase[SharedBool] with HasRandLedger { self:
 
   def zero = SharedBool.const(0.B, numShares)
 
-  // def g: Gadget = DOM
-  def g: Gadget = HPC2
+  // def g: Gadget = DOM()
+  def g: Gadget = HPC2()
 
   def randBitsPerAnd2 = g.andRandBits(order)
 

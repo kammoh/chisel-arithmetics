@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 from dataclasses import dataclass
+from email.policy import default
 import json
+from math import ceil
 import os
 from pathlib import Path
 import random
@@ -11,6 +13,7 @@ from typing import Any
 
 import numpy as np
 import matplotlib.pyplot as plt
+from quantiphy import Quantity
 
 # Synthesize RTL sources using yosys and then run PROLEAD
 
@@ -18,13 +21,36 @@ argparser = argparse.ArgumentParser(description="Run PROLEAD")
 
 argparser.add_argument("source_files", nargs="+", type=Path, help="Source files")
 argparser.add_argument("-t", "--top-module", default=None, help="Top module")
-argparser.add_argument("--force-synth", help="Force synthesis.", action="store_true", default=False)
+argparser.add_argument("--force-synth", help="Force synthesis.", action="store_true")
 argparser.add_argument("--yosys-bin", help="Path to yosys binary", default="yosys")
 argparser.add_argument(
     "--prolead-root-dir", help="Path to PROLEAD source directory", type=Path, default=None
 )
 argparser.add_argument("--prolead-bin", help="Path to PROLEAD binary", default=None)
 argparser.add_argument("--random-seed", default=None, type=int, help="Random seed")
+argparser.add_argument("-d", "--order", default=1, type=int, help="SCA order")
+argparser.add_argument(
+    "-N", "--num-simulations", default=Quantity("10 M"), type=Quantity, help="Number of simulations"
+)
+argparser.add_argument(
+    "-c", "--sim-cycles", type=int, required=True, help="Number of simulation cycles"
+)
+argparser.add_argument(
+    "--transitional",
+    action=argparse.BooleanOptionalAction,
+    type=bool,
+    default=True,
+    help="Enable transitional leakage",
+)
+argparser.add_argument(
+    "--compact",
+    action=argparse.BooleanOptionalAction,
+    type=bool,
+    default=False,
+    help="""Use compact distributions. Only the Hamming weight of the observations is stored, 
+            resulting in a more concise table. Reduces memory usage by storing less detailed data,
+            which means that leakages can be overseen compared to normal mode.""",
+)
 
 args = argparser.parse_args()
 
@@ -176,11 +202,11 @@ netlist_file = None
 if args.top_module:
     netlist_file = prolead_run_dir / "netlist.v"
 
-run_synth = args.force_synth or (netlist_file is None)
+run_synth = args.force_synth
 
-if run_synth is None and netlist_file:
+if not run_synth:
     # Check if the netlist file exists
-    if not netlist_file.exists():
+    if not netlist_file or not netlist_file.exists():
         run_synth = True
     else:
         # check if modification time of the netlist file is older than the source files
@@ -299,13 +325,15 @@ def run_prolead(
     top_module: str,
     library_name: str,
     library_json: Path,
+    sca_config: dict,
+    sim_config: dict,
     result_folder: str | Path = "results",
 ):
 
     assert netlist_file.exists(), f"Netlist file {netlist_file} does not exist"
 
     config_file = prolead_run_dir / "config.json"
-    generate_config(config_file, input_ports, output_ports)
+    generate_config(config_file, input_ports, output_ports, sca_config, sim_config)
 
     print(f"** Running PROLEAD in {prolead_run_dir.absolute()}")
 
@@ -359,11 +387,15 @@ def run_prolead(
     data = []
     data_np = None
 
-    write_every = 2_000_000
+    write_every = 300
 
     prev_checkpoint = 0
 
-    npy_file = prolead_run_dir / f"{top_module}_data.npy"
+    npy_file = prolead_run_dir / f"{top_module}_data.npz"
+
+    def save_data():
+        if data_np is not None:
+            np.savez_compressed(npy_file, data_np)
 
     leaking_signals = set()
 
@@ -373,6 +405,7 @@ def run_prolead(
             m = result_line_regex.fullmatch(line)
             if m:
                 print("> " + line)
+                elapsed_time = float(m.group("elapsed_time"))
                 # print(f"matches: {m.groups()}")
                 n_sim = int(m.group("n_sim"))
                 # total_sim = int(m.group("total_sim"))
@@ -384,11 +417,11 @@ def run_prolead(
                     leaking_signals.update((s, n_sim, p_log) for s in signals.split(", "))
                 # leakage = status == "LEAKAGE"
                 data.append((n_sim, p_log))
-                if write_every > 0 and (n_sim - prev_checkpoint >= write_every):
+                if elapsed_time - prev_checkpoint >= write_every:
+                    prev_checkpoint = elapsed_time
                     print(f"Writing checkpoint to {npy_file}")
-                    prev_checkpoint = n_sim
                     data_np = np.array(data)
-                    np.save(npy_file, data_np)
+                    save_data()
                 # print(f"{n_sim}/{total_sim} {signals} {p_log} {status}")
             else:
                 print(line)
@@ -400,7 +433,7 @@ def run_prolead(
         if data:
             data_np = np.array(data)
             print(f"** Writing data to {npy_file}")
-            np.save(npy_file, data_np)
+            save_data()
         else:
             print("No data captured")
         if leaking_signals:
@@ -422,33 +455,44 @@ def run_prolead(
         print(f"PROLEAD failed with return code {proc.returncode}")
         exit(1)
 
+    ## https://github.com/ChairImpSec/PROLEAD/wiki/Results
+
     if data_np is not None:
         # Plot
         plt.figure()
 
         x = data_np[:, 0]
-        y = data_np[:, 1]
+        y = data_np[:, 1]  # The smallest p-value from the g-test in logarithmic form
 
         num_sims = np.max(x)
         max_p_log = np.max(y)
 
-        if num_sims > 10_000_000_000:
-            x_scale = 1_000_000_000
-        elif num_sims > 10_000_000:
-            x_scale = 1_000_000
-        elif num_sims > 10_000:
-            x_scale = 1_000
+        if num_sims >= 1e10:
+            x_scale = 1e9
+        elif num_sims >= 1e7:
+            x_scale = 1e6
+        elif num_sims >= 1e4:
+            x_scale = 1e3
         else:
             x_scale = 1
 
         if x_scale > 1:
             x = x / x_scale
 
-        plt.plot(x, y, label="glitch+transition")
-        plt.axhline(y=6, color="r", linestyle="--")
-        plt.axhline(y=max_p_log, color="blue", linestyle="--")
+        plt.plot(
+            x,
+            y,
+            label=r"$-\log_{10}(p)$"
+            + " [glitch"
+            + ("+transition" if sca_config.get("transitional_leakage") else "")
+            + "]",
+        )
+        plt.axhline(y=5, color="r", linestyle="--", label="Threshold")
+        plt.axhline(y=max_p_log, color="blue", linestyle="--", label="Minimum p-value")
         plt.xlabel("Number of Simulations" + (f" (x{int(x_scale):,})" if x_scale > 1 else ""))
         plt.ylabel(r"$-\log_{10}(p)$")
+        plt.legend(loc="best", fancybox=True, framealpha=0.9)
+        plt.tight_layout()
 
         fig_file = npy_file.with_suffix(".png")
 
@@ -461,7 +505,11 @@ def div_ceil(a: int, b: int) -> int:
 
 
 def generate_config(
-    config_file: Path, input_ports: list[dict[str, Any]], output_ports, sca_order=1
+    config_file: Path,
+    input_ports: list[dict[str, Any]],
+    output_ports,
+    sca_config: dict,
+    sim_config: dict,
 ):
 
     shares_maps = [
@@ -515,45 +563,64 @@ def generate_config(
     # fixed group
     groups.append(f"{total_input_bits}'b{fixed_group_value:0{total_input_bits}b}")
 
-    # simulation configuration
-    simulation_cycles: int = 14
-
-    end_cycles: int | None = 14
+    end_cycles: int | None = None
     end_signal: str | None = None
     end_signal_value: str | int = 1
 
-    sim_vcd = False
+    sim_vcd = sim_config.pop("vcd", False)
 
-    # number_of_simulations = 50_000_000
-    number_of_simulations = 10_000_000
+    number_of_simulations: int = sim_config.pop("number_of_simulations", None)
 
-    number_of_simulations_per_step = 16 * 1024
+    number_of_simulations_per_step = sim_config.get("number_of_simulations_per_step", 256)
 
     number_of_sim_steps = div_ceil(number_of_simulations, number_of_simulations_per_step)
+
+    assert number_of_sim_steps, "number_of_sim_steps must be specified"
 
     assert (
         number_of_simulations_per_step % 64 == 0
     ), "number_of_simulations_per_step must be a multiple of 64"
 
     if sim_vcd:
+        sim_config["waveform_simulation"] = True
+        print("** VCD waveform generation is enabled!")
+        print("** Number of simulations was set to 64!")
         number_of_sim_steps = 1
         number_of_simulations_per_step = 64
 
     number_of_simulations = number_of_simulations_per_step * number_of_sim_steps
 
-    print(f"Total number of simulations: {number_of_simulations:,}")
+    print(f"** Total number of simulations: {number_of_simulations:,}")
+    print(f"** Number of simulations per step: {number_of_simulations_per_step:,}")
 
     performance = {
         # "max_number_of_threads": "half",  ### half of the available cores
         "max_number_of_threads": "8",
         # "minimize_probing_sets": "aggressive",
         "minimize_probing_sets": "trivial",
-        "compact_distributions": True,
+        "compact_distributions": sca_config.pop("compact_distributions", False),
     }
 
     input_sequence = []
 
     start_bits = {}
+
+    end_condition = {}
+
+    if end_cycles:
+        end_condition["clock_cycles"] = end_cycles
+    if end_signal:
+        if isinstance(end_signal_value, (int, bool)):
+            end_signal_value = f"1'b{int(end_signal_value):b}"
+        end_condition = {"signals": {[{"name": end_signal, "value": f"{end_signal_value}"}]}}
+
+    sim_config["number_of_simulations_per_step"] = number_of_simulations_per_step
+    sim_config["number_of_simulations"] = number_of_simulations
+
+    sim_config["groups"] = groups
+    sim_config["always_random_inputs"] = [p.name_bits for p in rand_inputs]
+    sim_config["input_sequence"] = input_sequence
+    sim_config["end_condition"] = end_condition
 
     def assign_fresh_values(shared_inputs: list[Input]) -> list[dict[str, str]]:
         signals = []
@@ -589,53 +656,16 @@ def generate_config(
         },
     ]
 
-    end_condition = {}
-
-    if end_cycles:
-        end_condition["clock_cycles"] = end_cycles
-    if end_signal:
-        if isinstance(end_signal_value, (int, bool)):
-            end_signal_value = f"1'b{int(end_signal_value):b}"
-        end_condition = {"signals": {[{"name": end_signal, "value": f"{end_signal_value}"}]}}
-
-    simulation = {
-        "groups": groups,
-        "always_random_inputs": [p.name_bits for p in rand_inputs],
-        "input_sequence": input_sequence,
-        "end_condition": end_condition,
-        "number_of_simulations": number_of_simulations,
-        "number_of_simulations_per_step": number_of_simulations_per_step,
-        "end_wait_cycles": 0,
-        "number_of_clock_cycles": simulation_cycles,
-    }
-    if sim_vcd:
-        simulation["waveform_simulation"] = True
-
     hardware = {}
-
-    probe_placement = {
-        # "include": {"signals": ".*", "paths": ".*"},
-        # "exclude": {"signals": "_g_WIRE(_1)?"},
-    }
-
-    sca = {
-        "order": sca_order,
-        # "transitional_leakage": True,
-        "transitional_leakage": False,
-        # "clock_cycles": ["1-2"],
-    }
-
-    if probe_placement:
-        sca["probe_placement"] = probe_placement
 
     if clock_signal:
         hardware["clock_signal_name"] = clock_signal
 
     config = {
         "performance": performance,
-        "simulation": simulation,
+        "simulation": sim_config,
         "hardware": hardware,
-        "side_channel_analysis": sca,
+        "side_channel_analysis": sca_config,
     }
     print(f"Writing config to {config_file.absolute()}")
 
@@ -650,11 +680,39 @@ random_seed = args.random_seed if args.random_seed is not None else random.randi
 print(f"Using random seed: {random_seed}")
 random.seed(random_seed)
 
+probe_placement = {
+    # "include": {"signals": ".*", "paths": ".*"},
+    # "exclude": {"signals": "_g_WIRE(_1)?"},
+}
+
+sca_config = {
+    "order": args.order,
+    "transitional_leakage": args.transitional,
+    # "clock_cycles": ["1-2"],
+}
+
+if probe_placement:
+    sca_config["probe_placement"] = probe_placement
+
+num_simulations = ceil(float(args.num_simulations))
+
+number_of_simulations_per_step = min(16, div_ceil(num_simulations, 1_000_000)) * 1024
+
+sim_config = {
+    "number_of_simulations": num_simulations,
+    "number_of_simulations_per_step": number_of_simulations_per_step,
+    # "end_wait_cycles": 0,
+    "number_of_clock_cycles": args.sim_cycles,
+    "compact_distributions": False,
+}
+
 run_prolead(
     args.prolead_bin,
     netlist_file,
     args.top_module,
     library_name="custom",
     library_json=PROLEAD_ROOT_ROOT / "library.json",
+    sca_config=sca_config,
+    sim_config=sim_config,
     result_folder="results",
 )
