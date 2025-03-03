@@ -1,6 +1,7 @@
 package adders
 
 import drawio._
+import chisel3.experimental.SourceInfo
 
 trait Edge
 
@@ -106,9 +107,7 @@ class Graph {
   }
 
   def cellAbove(level: Int, offset: Int): Option[CellNode] = {
-    // println(s"   cellAbove $level $offset cells.size=${cells.size}")
     if (level < 0 || offset < 0) {
-      println("  --- none")
       return None
     }
     (level - 1).to(0, -1).map(cells(_).get(offset)).collectFirst { case Some(value) =>
@@ -260,7 +259,7 @@ trait AdderGraph[T] extends Adder[T] {
     "rounded" -> 1,
     "orthogonalLoop" -> 1,
     "html" -> 1,
-    "endSize" -> 3,
+    "endSize" -> 2,
     "exitX" -> 0.5,
     "exitY" -> 1,
     "exitDx" -> 0,
@@ -337,8 +336,13 @@ trait AdderGraph[T] extends Adder[T] {
     node
   }
 
-  def mkBlackCell(pg: (Option[T], Option[T]), pgr: (Option[T], Option[T]), i: Int, j: Int, jr: Int)
-    : (Option[T], Option[T]) = {
+  def mkBlackCell(
+    pg: (Option[T], Option[T]),
+    pgr: (Option[T], Option[T]),
+    i: Int,
+    j: Int,
+    jr: Int
+  )(implicit sourceInfo: SourceInfo): (Option[T], Option[T]) = {
     (pg, pgr) match {
       case ((_, g), (None, None)) =>
         (None, g)
@@ -353,12 +357,24 @@ trait AdderGraph[T] extends Adder[T] {
     }
   }
 
-  def mkCell[C <: CellType](ct: C, pg: (Option[T], Option[T]), gr: Option[T], i: Int, j: Int, jr: Int = -1)
-    : (Option[T], Option[T]) =
+  def mkCell[C <: CellType](
+    ct: C,
+    pg: (Option[T], Option[T]),
+    gr: Option[T],
+    i: Int,
+    j: Int,
+    jr: Int = -1
+  )(implicit sourceInfo: SourceInfo): (Option[T], Option[T]) =
     mkCell(ct, pg, (None, gr), i, j, jr)
 
-  def mkCell[C <: CellType](ct: C, pg: (Option[T], Option[T]), pgr: (Option[T], Option[T]), i: Int, j: Int, jr: Int)
-    : (Option[T], Option[T]) = {
+  def mkCell[C <: CellType](
+    ct: C,
+    pg: (Option[T], Option[T]),
+    pgr: (Option[T], Option[T]),
+    i: Int,
+    j: Int,
+    jr: Int
+  )(implicit sourceInfo: SourceInfo): (Option[T], Option[T]) = {
     ct match {
       case NullIn =>
         addBox(InCell(i, j))
@@ -394,8 +410,13 @@ trait AdderGraph[T] extends Adder[T] {
     }
   }
 
-  def mkCell(pg: (Option[T], Option[T]), pgr: (Option[T], Option[T]), i: Int, j: Int, jr: Int)
-    : (Option[T], Option[T]) = {
+  def mkCell(
+    pg: (Option[T], Option[T]),
+    pgr: (Option[T], Option[T]),
+    i: Int,
+    j: Int,
+    jr: Int
+  )(implicit sourceInfo: SourceInfo): (Option[T], Option[T]) = {
 
     mkBlackCell(pg, pgr, i, j, jr)
   }

@@ -4,6 +4,8 @@ import chisel3.experimental.SourceInfo
 
 trait Adder[T] {
 
+  def filler(x: Option[T])(implicit sourceInfo: SourceInfo): Option[T] = x
+
   def add(x: Seq[T], y: Seq[T], cin: Option[T] = None): Seq[T]
 
   def xor(a: T, b: T)(implicit sourceInfo: SourceInfo): T
@@ -121,7 +123,9 @@ trait Adder[T] {
     (and(p, pr), genG(p, g, gr))
 
   def halfAdder(a: Option[T], b: Option[T])(implicit sourceInfo: SourceInfo): (Option[T], Option[T]) = {
-    (xor(a, b), and(a, b))
+    val c = and(a, b)
+    val s = xor(a, b)
+    (s, c)
   }
 
   def pgSum(a: Option[T], b: Option[T]): (Option[T], Option[T]) = {
@@ -129,14 +133,12 @@ trait Adder[T] {
   }
 
   def fullAdder(a: Option[T], b: Option[T], cin: Option[T])(implicit sourceInfo: SourceInfo): (Option[T], Option[T]) = {
+    val c = majority(a, b, cin)
     val s = xor(a, b, cin)
-    val g = majority(a, b, cin)
-    (s, g)
+    (s, c)
   }
 
-  def fullAdder(a: T, b: T, cin: Option[T])(implicit sourceInfo: SourceInfo): (Option[T], Option[T]) =
-    fullAdder(Some(a), Some(b), cin)
-
-  def grayCell(p: Option[T], g: Option[T], c: Option[T]): (Option[T], Option[T]) = (None, genG(p, g, c))
+  def grayCell(p: Option[T], g: Option[T], c: Option[T])(implicit sourceInfo: SourceInfo): (Option[T], Option[T]) =
+    (None, genG(p, g, c))
 
 }

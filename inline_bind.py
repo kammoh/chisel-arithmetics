@@ -31,9 +31,11 @@ with open(args.file, "r", encoding="utf8") as f:
         inject = "\n\n".join(indent(si, "  ") for si in submodule_instances)
         inject = "  initial assume(reset);\n\n" + inject
         inject = (
-            "`ifndef SYNTHESIS\n`ifdef FORMAL\n"
+            "`ifndef SYNTHESIS\n"
+            # + "`ifdef FORMAL\n"
             + inject
-            + "\n`endif // FORMAL\n`endif // not SYNTHESIS"
+            # + "\n`endif // FORMAL"
+            + "\n`endif // not SYNTHESIS"
         )
         (content, n) = re.subn(
             r"(.*module\s+" + module_name + r"\s*\(.*)(endmodule)",

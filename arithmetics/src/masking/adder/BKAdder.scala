@@ -1,6 +1,10 @@
 package masking
 package adder
 
-import chest.masking._
+import chest.masking.SharedBool
 
-class BKAdder(val width: Int, val order: Int = 1) extends BooleanMaskedAdderModule with adders.BrentKung[SharedBool] {}
+class BKAdder(val width: Int, val order: Int, gadget: String)
+    extends BooleanMaskedAdderModule
+    with adders.BrentKung[SharedBool] {
+  override def g: Gadget = Gadget(gadget)
+}

@@ -1,6 +1,9 @@
+// package build
 import mill._, scalalib._
 
-import $file.chest.common
+import $file.chest.{common => chestBuild}
+
+import $packages._
 
 object ivys {
   val scalaVersion = "2.13.15"
@@ -8,21 +11,20 @@ object ivys {
   // run `mill mill.scalalib.Dependency/showUpdates` to check for updates
   val ivyVersions = Map(
     "scala" -> scalaVersion,
-    // "org.chipsalliance::chisel" -> "7.0.0-M2+",
-    "org.chipsalliance::chisel" -> "7.0.0-M2+167-abf74afc-SNAPSHOT",
+    "org.chipsalliance::chisel" -> "7.0.0-M2+503-f3670a3f-SNAPSHOT",
     "org.chipsalliance:::chisel-plugin" -> "$chisel",
-    "edu.berkeley.cs::chiseltest" -> "7.0.0-M2+42-e6146b3f-SNAPSHOT",
-    "org.scalatest::scalatest" -> "3.2.17+",
-    "org.scalacheck::scalacheck" -> "1.17.0+",
-    "org.scalatestplus::scalacheck-1-17" -> "3.2.17+",
+    "xyz.kamyar::chiseltest" -> "7.0.0-M2-2-4e0175-DIRTY3b1b8f08-SNAPSHOT",
+    "org.scalatest::scalatest" -> "3.2.19",
+    "org.scalacheck::scalacheck" -> "1.18.1+",
+    "org.scalatestplus::scalacheck-1-18" -> "3.2.19.0",
     "com.outr::scribe" -> "3.15.0",
     "com.lihaoyi::pprint" -> "0.9.0+",
     "com.lihaoyi::mainargs" -> "0.7.0+",
     "com.lihaoyi::os-lib" -> "0.10.2+",
     "org.scala-lang.modules::scala-parallel-collections" -> "1.0.4+",
     "org.scala-lang:scala-reflect" -> scalaVersion,
-    "org.json4s::json4s-jackson" -> "4.0.7+",
-    "org.json4s::json4s-native" -> "4.0.7+",
+    "org.json4s::json4s-jackson" -> "4.1.0-M8+",
+    "org.json4s::json4s-native" -> "4.1.0-M8+",
     "com.chuusai::shapeless" -> "2.3.12",
     "org.rogach::scallop" -> "5.1.0",
     "com.lihaoyi::utest" -> "0.8.2",
@@ -37,8 +39,8 @@ trait HasIvyVersions {
   def ivyVersions: Map[String, String] = ivys.ivyVersions
 }
 
-trait MacrosModule extends millbuild.chest.common.CommonMacrosModule with HasIvyVersions {}
-trait ChiselModule extends millbuild.chest.common.CommonChiselModule with HasIvyVersions {}
+trait MacrosModule extends chestBuild.CommonMacrosModule with HasIvyVersions {}
+trait ChiselModule extends chestBuild.CommonChiselModule with HasIvyVersions {}
 
 // trait MacrosModule extends CommonScalaModule {
 //   override def ivyDeps = super.ivyDeps() ++ Agg(
@@ -59,7 +61,7 @@ object arithmetics extends ChiselModule {
     dep("drawio"),
   )
 
-  override def moduleDeps = Seq(chest)
+  override def moduleDeps = Seq(Chest)
 
   object test extends ScalaTests with TestModule.ScalaTest {
     override def ivyDeps = super.ivyDeps() ++ Agg(
@@ -76,7 +78,7 @@ object chestMacros extends MacrosModule {
   )
 }
 
-object chest extends ChiselModule {
+object Chest extends ChiselModule {
   override def millSourcePath = super.millSourcePath / os.up / "chest" / "chest"
 
   override def ivyDeps = super.ivyDeps() ++ Agg(

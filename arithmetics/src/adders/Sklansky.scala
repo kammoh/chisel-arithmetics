@@ -3,7 +3,7 @@ package adders
 import chisel3._
 import chisel3.util._
 
-trait SklanskyAdder[T] extends PrefixAdder[T] { self: Module =>
+trait SklanskyAdder[T <: Data] extends PrefixAdder[T] { self: Module =>
 
   override def buildPrefixAdder(pg: Seq[(Option[T], Option[T])]): Seq[(Option[T], Option[T])] = {
     val n = pg.length

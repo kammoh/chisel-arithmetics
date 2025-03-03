@@ -35,6 +35,8 @@ trait HasRandLedger { self: Module =>
 
   def randAlwaysValid: Boolean = true
 
+  def randomBits = VecInit(_randsLedger.toSeq)
+
   atModuleBodyEnd {
     val randBits = _randsLedger.length
     println(s"randBits=${randBits}")
@@ -42,7 +44,7 @@ trait HasRandLedger { self: Module =>
     if (randAlwaysValid)
       noPrefix {
         val rand = IO(Input(UInt(randBits.W))).suggestName("rand")
-        _randsLedger.zipWithIndex.foreach { case (r, i) => r :#= rand(i) }
+        _randsLedger.zip(rand.asBools).foreach { case (wi, ri) => wi :#= ri }
         randInValid := 1.B
       }
     else
@@ -76,8 +78,8 @@ trait MaskedAdder extends MaskedAdderBase[SharedBool] with HasRandLedger { self:
 
   def zero = SharedBool.const(0.B, numShares)
 
-  // def g: Gadget = DOM()
-  def g: Gadget = HPC2()
+  def g: Gadget = DOM(pipelined = true)
+  // def g: Gadget = HPC2(pipelined = false, balanced = false)
 
   def randBitsPerAnd2 = g.andRandBits(order)
 
@@ -96,7 +98,8 @@ trait MaskedAdder extends MaskedAdderBase[SharedBool] with HasRandLedger { self:
 
   override def desiredName: String = {
     val clzName = simpleClassName(this.getClass)
-    clzName + (if (clzName.toLowerCase.endsWith("adder")) "" else "Adder") + s"_order${order}_w$width"
+    clzName + (if (clzName.toLowerCase.endsWith("adder")) ""
+               else "Adder") + s"_w${width}_d${order}_${g.getClass.getSimpleName.toLowerCase}"
   }
 
   override def majority(
@@ -116,9 +119,9 @@ trait MaskedAdder extends MaskedAdderBase[SharedBool] with HasRandLedger { self:
   )(implicit sourceInfo: SourceInfo): (Option[SharedBool], Option[SharedBool]) = {
     // val ref = reqRands(numShares - 1)
     // val s = gadget.reg(xor(a, b, cin).map(_.refreshed(ref)))
-    val s = xor(a, b, cin)
-    // val g = majority(a, b, cin)
     val g = majority(a, b, cin)
+    val s = if(g.isDefined) filler(xor(a, b, cin)) else xor(a, b, cin)
+    // val g = majority(a, b, cin)
     (s, g)
   }
 

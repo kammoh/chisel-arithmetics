@@ -1,0 +1,3 @@
+[submodule "dependencies/chest"]
+	path = chest
+	url = https://github.com/kammoh/chest.git

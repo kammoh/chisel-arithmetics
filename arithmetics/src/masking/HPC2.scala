@@ -4,12 +4,15 @@ import chisel3._
 import chisel3.util._
 
 import chest._
-import chest.masking.SharedBool
+import chest.masking.{SharedBool, Shared}
 import chisel3.experimental.SourceInfo
-
+import chisel3.layers.Verification
 
 case class HPC2(override val pipelined: Boolean = false, override val balanced: Boolean = false) extends Gadget {
   def andRandBits(t: Int): Int = (t + 1) * t / 2
+
+  def andMaxDelay: Int = 2
+  def andMinDelay: Int = if (balanced) 2 else 1
 
   def majorityRandBits(t: Int): Int = andRandBits(t)
 
@@ -39,39 +42,56 @@ case class HPC2(override val pipelined: Boolean = false, override val balanced: 
     require(rand.length == requiredRandBits, s"rand.length=${rand.length} requiredRandBits=${requiredRandBits}")
 
     val en0 = randValid
-    val en1 = RegNext(en0)
 
-    def optReg[T <: Data](input: T): T = if (pipelined || balanced) RegEnable(input, en0) else input
-
-    def balanceReg[T <: Data](input: T, en: Bool = en0): T = if (balanced) RegEnable(input, en) else input
+    def oReg[T <: Data](input: T, doReg: Boolean = true): T = if (doReg) RegEnable(input, 1.B) else input
 
     def r(i: Int, j: Int): Bool = {
       require(0 <= i && i < numShares)
       require(0 <= j && j < numShares)
       require(j != i)
-      if (j > i) {
-        val k = numShares * i - i * (i + 1) / 2 + (j - i - 1)
+      if (j < i) {
+        val k = i * (i + 1) / 2 + j - i
         rand(k)
       } else r(j, i)
     }
 
     SharedBool.from(Seq.tabulate(numShares) { i =>
-      val a_i = balanceReg(a.getShare(i))
-      val b_i = optReg(b.getShare(i)) // <-- probably essential for security TODO verify
-      // markDontTouch(
+      val a_i = a.getShare(i)
+      val b_i = b.getShare(i)
       (
         // same-domain terms
         (0 until numShares).map { j =>
-          (if (i == j) a_i & b_i else !a_i & reg(r(i, j), en0))
+          if (i == j)
+            if (balanced)
+              oReg(a_i & b_i)
+            else
+              (a_i & oReg(b_i))
+          else if (balanced)
+            oReg(!a_i & r(i, j))
+          else
+            !a_i & oReg(r(i, j))
         }.reduce(_ ^ _) +:
           // cross-domain terms
           (0 until numShares).collect {
             case j if j != i =>
-              a_i & reg(b.getShare(j) ^ r(i, j), en0)
+              val b_j = b.getShare(j)
+              oReg(a_i, balanced) & reg(b_j ^ r(i, j), en0)
           }
-      ).map(reg(_, en1)).reduce(_ ^ _)
-      // )
+      ).map(reg(_)).reduce(_ ^ _)
     })
+
+    // SharedBool.from(Seq.tabulate(numShares) { i =>
+    //   val a_i = a.getShare(i)
+    //   xorReduceSeq(optReg(balanceReg(a_i) & b.getShare(i)) +: (0 until numShares).filter(_ != i).flatMap { j =>
+    //     // val u_ij = reg(!a_i & r_ij)
+    //     val s = reg(b.shares(j) ^ r(i, j))
+    //     val p1 = reg(s & balanceReg(a_i))
+    //     val p0 = balanceReg(reg(!a_i & r(i, j)))
+
+    //     Seq(p0, p1)
+
+    //   })
+    // })
   }
 
   /** ==Toffoli gate==
@@ -99,7 +119,8 @@ case class HPC2(override val pipelined: Boolean = false, override val balanced: 
     c: SharedBool,
     rand: Seq[Bool],
     randValid: Bool,
-    enable: Option[Bool] = None): SharedBool = {
+    enable: Option[Bool] = None
+  )(implicit sourceInfo: SourceInfo): SharedBool = {
     val numShares = a.numShares
     require(numShares == b.numShares)
 
@@ -112,7 +133,7 @@ case class HPC2(override val pipelined: Boolean = false, override val balanced: 
     // register is required for correctness, based on the pipelining or balancedness
     def optReg[T <: Data](input: T, en: Bool = en0): T = if (pipelined || balanced) RegEnable(input, en) else input
 
-    def balanceReg[T <: Data](input: T, en: Bool = en0): T = if (balanced) RegEnable(input, en) else input
+    def balanceReg[T <: Data](input: T, en: Bool = en0): T = if (balanced && pipelined) RegEnable(input, en) else input
 
     def r(i: Int, j: Int): Bool = {
       if (j < i)
@@ -125,12 +146,15 @@ case class HPC2(override val pipelined: Boolean = false, override val balanced: 
       }
     }
 
+    println(s"balanced: $balanced, pipelined: $pipelined")
+
     SharedBool.from(Seq.tabulate(numShares) { i =>
-      val a_i = if (balanced) optReg(a.getShare(i)) else a.getShare(i)
-      val b_i = optReg(b.getShare(i)) // <-- probably essential for security TODO verify
+      val a_i = balanceReg(a.getShare(i))
+      val b_i = optReg(b.getShare(i))
+      val c_i = balanceReg(c.getShare(i))
       (
         // same-domain terms
-        (balanceReg(c.getShare(i)) +: (0 until numShares).map { j =>
+        (c_i +: (0 until numShares).map { j =>
           (if (i == j) a_i & b_i else !a_i & reg(r(i, j), en0))
         }).reduce(_ ^ _) +:
           // cross-domain terms
@@ -142,15 +166,23 @@ case class HPC2(override val pipelined: Boolean = false, override val balanced: 
     })
   }
 
-  def majority(a: SharedBool, b: SharedBool, c: SharedBool, rand: Seq[Bool], randValid: Bool): SharedBool = {
+  def majority(
+    a: SharedBool,
+    b: SharedBool,
+    c: SharedBool,
+    rand: Seq[Bool],
+    randValid: Bool
+  )(implicit sourceInfo: SourceInfo): SharedBool = {
     val numShares = a.numShares
     require(b.numShares == numShares)
     require(c.numShares == numShares)
 
+    val br = optReg(b)
+
     toffoli(
-      b ^ c, // 1 cycle delay from `c` (used for carry-in)
+      br ^ c, // 1 cycle delay from `c` (used for carry-in)
       a ^ b, // 2 cycle delay
-      b,
+      br, // 1 cycle delay, therefore needs optReg
       rand,
       randValid,
     )
@@ -322,60 +354,50 @@ case class HPC2(override val pipelined: Boolean = false, override val balanced: 
 
 }
 
-
-class Hpc2Module extends Module {
-  val order: Int = 1
-  val numInputs: Int = 2
+class Hpc2Module(order: Int, w: Int = 1, balanced: Boolean = true) extends Module {
+  // val numInputs: Int = 2
   require(order >= 1, "masking order must be at least 1")
-  require(numInputs > 1, "number of inputs must be at least 2")
+  // require(numInputs > 1, "number of inputs must be at least 2")
   // require(width > 0, "width must be at least 1")
 
-  override def desiredName: String = simpleClassName(this.getClass()) + s"_order${order}_${numInputs}ins"
+  override def desiredName: String = simpleClassName(this.getClass()) + s"_order${order}"
 
   val numShares = order + 1
 
-  def gen = SharedBool(numShares)
+  def gen = Shared(numShares, w.W)
 
-  val g = HPC2()
+  val g = HPC2(balanced = balanced)
 
-  val io = FlatIO(new Bundle {
-    val in = Input(Vec(numInputs, gen))
+  val randPerBit = g.requiredRandBits(numShares)
+
+  println(s"numShares: $numShares, randPerBit: $randPerBit")
+
+  val io = IO(new Bundle {
+    // val in = Input(Vec(numInputs, gen))
+    val a = Input(gen)
+    val b = Input(gen)
     // val rand = Flipped(Valid(Vec(HPC2.requiredRandBits(numShares, numInputs), Bool())))
-    val rand = Flipped(Vec(g.requiredRandBits(numShares, numInputs), Bool()))
+    val rand = Input(UInt((randPerBit * gen.elWidth).W))
     val out = Output(gen)
   })
 
-  val balanced = false
+  io.out :#= g.and(io.a, io.b, io.rand.asBools, randValid = 1.B)
 
-  numInputs match {
-    case 2 =>
-      // io.out :#= HPC2.and2(io.in(0), io.in(1), io.rand.bits, io.rand.valid, balanced = balanced)
-      io.out :#= g.and(io.in(0), io.in(1), io.rand, randValid = 1.B)
-    // case 3 =>
-    //   io.out :#= HPC2.and3(io.in(0), io.in(1), io.in(2), io.rand.bits, io.rand.valid, balanced = balanced)
-    case _ =>
-      throw new NotImplementedError(s"numInputs=${numInputs}")
-  }
+  layer.block(Verification) {
+    val verifDelay = Module(new VerifModule(2))
 
-  val verifDelay = Module(new VerifModule(2))
-
-  // when(~reset.asBool & verifDelay.valid && ShiftRegister(io.rand.valid, 2)) {
-  when(~reset.asBool & verifDelay.valid) {
-    // printf(p"verifDelay.valid\n")
-
-    assert(
-      io.out.shares.reduce(_ ^ _) === RegNext(
-        io.in
-          .map(_.shares.reduce(_ ^ _))
-          .zipWithIndex
-          .map { case (in, i) => if (!balanced && i == 0) in else RegNext(in) }
-          .reduce(_ & _)
+    when(verifDelay.valid) {
+      assert(
+        io.out.unshared() === ShiftRegister(
+          ShiftRegister(io.b.unshared(), if (balanced) 0 else 1) & io.a.unshared(),
+          if (balanced) 2 else 1
+        )
       )
-    )
+    }
   }
 }
 
-class ToffoliModule extends Module {
+class Hpc2ToffoliModule extends Module {
   val order: Int = 1
   require(order >= 1, "masking order must be at least 1")
 
@@ -385,28 +407,36 @@ class ToffoliModule extends Module {
 
   def gen = SharedBool(numShares)
 
-  val g = HPC2()
+  val balanced = false
+  val pipelined = true
 
+  val g = HPC2(pipelined = pipelined, balanced = balanced)
 
   val io = IO(new Bundle {
     val a = Input(gen)
     val b = Input(gen)
     val c = Input(gen)
-    val rand = Flipped(Valid(Vec(g.requiredRandBits(numShares), Bool())))
+    val rand = Input(Vec(g.requiredRandBits(numShares), Bool()))
     val out = Output(gen)
   })
 
-  val balanced = false
+  io.out :#= g.toffoli(io.a, io.b, io.c, io.rand, 1.B)
 
-  io.out :#= g.toffoli(io.a, io.b, io.c, io.rand.bits, io.rand.valid)
-
-  val verifDelay = Module(new VerifModule(2))
-
-  when(~reset.asBool & verifDelay.valid && ShiftRegister(io.rand.valid, 2)) {
-    // printf(p"verifDelay.valid\n")
-
-    assert(
-      io.out.shares.reduce(_ ^ _) === RegNext((io.a.unshared() & RegNext(io.b.unshared())) ^ io.c.unshared())
-    )
+  layer.block(Verification.Assert) {
+    val a_us_delayed = ShiftRegister(io.a.unshared(), if (balanced) 2 else 1)
+    val c_us_delayed = ShiftRegister(io.c.unshared(), if (balanced) 2 else 1)
+    val bp = Pipe(!reset.asBool, io.b.unshared(), 2)
+    when(bp.valid) {
+      assert(io.out.unshared() === (bp.bits & a_us_delayed) ^ c_us_delayed)
+    }
+  }
+  if (!pipelined) {
+    layer.block(Verification.Assume) {
+      when(!reset.asBool) {
+        assume(io.a === RegNext(io.a))
+        assume(io.b === RegNext(io.b))
+        assume(io.c === RegNext(io.c))
+      }
+    }
   }
 }

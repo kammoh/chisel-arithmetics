@@ -2,6 +2,7 @@ package adders
 
 import chisel3._
 import chisel3.util.simpleClassName
+import chisel3.experimental.skipPrefix
 
 abstract class BitsAdderModule extends Module with BitsAdder {
   def withAsserts: Boolean = true
@@ -20,7 +21,7 @@ abstract class BitsAdderModule extends Module with BitsAdder {
     clzName + (if (clzName.toLowerCase.endsWith("adder")) "" else "Adder") + width
   }
 
-  io.sum :#= add(io.a, io.b, io.cin)
+  io.sum :#= skipPrefix { add(io.a, io.b, io.cin) }
 
   if (withAsserts) {
     assert(io.sum === io.a +& io.b + io.cin.getOrElse(0.B))
