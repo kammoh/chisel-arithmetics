@@ -93,8 +93,8 @@ trait MaskedAdder extends MaskedAdderBase[SharedBool] with HasRandLedger { self:
 
   override def not(a: SharedBool)(implicit sourceInfo: SourceInfo): SharedBool = ~a
 
-  def add(a: Shared, b: Shared): Shared =
-    SharedBool.concat(add(a.asBools, b.asBools, None))
+  def add(a: Shared, b: Shared, cin: Option[SharedBool]): Shared =
+    SharedBool.concat(add(a.asBools, b.asBools, cin))
 
   override def desiredName: String = {
     val clzName = simpleClassName(this.getClass)
@@ -112,17 +112,17 @@ trait MaskedAdder extends MaskedAdderBase[SharedBool] with HasRandLedger { self:
 
   }
 
-  override def fullAdder(
-    a: Option[SharedBool],
-    b: Option[SharedBool],
-    cin: Option[SharedBool]
-  )(implicit sourceInfo: SourceInfo): (Option[SharedBool], Option[SharedBool]) = {
-    // val ref = reqRands(numShares - 1)
-    // val s = gadget.reg(xor(a, b, cin).map(_.refreshed(ref)))
-    val g = majority(a, b, cin)
-    val s = if(g.isDefined) filler(xor(a, b, cin)) else xor(a, b, cin)
-    // val g = majority(a, b, cin)
-    (s, g)
-  }
+  // override def fullAdder(
+  //   a: Option[SharedBool],
+  //   b: Option[SharedBool],
+  //   cin: Option[SharedBool]
+  // )(implicit sourceInfo: SourceInfo): (Option[SharedBool], Option[SharedBool]) = {
+  //   // val ref = reqRands(numShares - 1)
+  //   // val s = gadget.reg(xor(a, b, cin).map(_.refreshed(ref)))
+  //   val g = majority(a, b, cin)
+  //   val s = if(g.isDefined) filler(xor(a, b, cin)) else xor(a, b, cin)
+  //   // val g = majority(a, b, cin)
+  //   (s, g)
+  // }
 
 }

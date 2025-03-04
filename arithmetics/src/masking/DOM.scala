@@ -25,7 +25,9 @@ trait Gadget {
   def andMaxDelay: Int
   def andMinDelay: Int
 
-  def reg[T <: Data](t: T, en: Bool = 1.B)(implicit sourceInfo: SourceInfo): T = markDontTouch(RegEnable(markDontTouch(WireDefault(t)), en))
+  def reg[T <: Data](t: T, en: Bool = 1.B)(implicit sourceInfo: SourceInfo): T = markDontTouch(
+    RegEnable(markDontTouch(WireDefault(t)), en)
+  )
   def reg[T <: Data](t: Option[T], en: Bool)(implicit sourceInfo: SourceInfo): Option[T] = t.map(reg(_, en))
   def reg[T <: Data](t: Option[T])(implicit sourceInfo: SourceInfo): Option[T] = t.map(reg(_))
 
@@ -35,7 +37,8 @@ trait Gadget {
   } else
     markDontTouch(RegEnable(markDontTouch(Mux(clear, 0.U.asTypeOf(input), input)), en | clear))
 
-  def optReg[T <: Data](u: T, valid: Bool)(implicit sourceInfo: SourceInfo): T = if (pipelined) RegEnable(u, valid) else u
+  def optReg[T <: Data](u: T, valid: Bool)(implicit sourceInfo: SourceInfo): T =
+    if (pipelined) RegEnable(u, valid) else u
   def optReg[T <: Data](u: T)(implicit sourceInfo: SourceInfo): T = if (pipelined) RegEnable(u, 1.B) else u
 
   def andRandBits(t: Int): Int
@@ -72,18 +75,25 @@ trait Gadget {
     c: SharedBool,
     rand: Seq[Bool],
     randValid: Bool,
-    enable: Option[Bool] = None)(implicit sourceInfo: SourceInfo): SharedBool
+    enable: Option[Bool] = None
+  )(implicit sourceInfo: SourceInfo): SharedBool
 
   def majorityRandBits(t: Int): Int
 
-  def majority(a: SharedBool, b: SharedBool, c: SharedBool, rand: Seq[Bool], randValid: Bool)(implicit sourceInfo: SourceInfo): SharedBool
+  def majority(
+    a: SharedBool,
+    b: SharedBool,
+    c: SharedBool,
+    rand: Seq[Bool],
+    randValid: Bool
+  )(implicit sourceInfo: SourceInfo): SharedBool
 
 }
 
 object Gadget {
-  def apply(name: String): Gadget = name.toUpperCase match {
-    case "DOM" => DOM(pipelined = true)
-    case "HPC2" => HPC2(pipelined = true, balanced = false)
+  def apply(name: String, pipelined: Boolean = true): Gadget = name.toUpperCase match {
+    case "DOM" => DOM(pipelined = pipelined)
+    case "HPC2" => HPC2(pipelined = pipelined, balanced = false)
     case _ => throw new IllegalArgumentException(s"Unknown gadget: $name")
   }
 
@@ -118,7 +128,13 @@ case class DOM(override val pipelined: Boolean = true) extends Gadget {
 
   def majorityRandBits(t: Int): Int = andRandBits(t) + t
 
-  def majority(a: SharedBool, b: SharedBool, c: SharedBool, rand: Seq[Bool], randValid: Bool)(implicit sourceInfo: SourceInfo): SharedBool = {
+  def majority(
+    a: SharedBool,
+    b: SharedBool,
+    c: SharedBool,
+    rand: Seq[Bool],
+    randValid: Bool
+  )(implicit sourceInfo: SourceInfo): SharedBool = {
     val numShares = a.numShares
     require(b.numShares == numShares)
     require(c.numShares == numShares)
@@ -219,7 +235,8 @@ case class DOM(override val pipelined: Boolean = true) extends Gadget {
     c: SharedBool,
     rand: Seq[Bool],
     randValid: Bool,
-    enable: Option[Bool] = None)(implicit sourceInfo: SourceInfo): SharedBool = {
+    enable: Option[Bool] = None
+  )(implicit sourceInfo: SourceInfo): SharedBool = {
     val numShares = a.numShares
     require(numShares == b.numShares)
 
@@ -228,9 +245,12 @@ case class DOM(override val pipelined: Boolean = true) extends Gadget {
 
     val en = randValid
 
-    def reg[T <: Data](t: T)(implicit sourceInfo: SourceInfo): T = markDontTouch(RegEnable(markDontTouch(WireDefault(t)), en))
+    def reg[T <: Data](t: T)(implicit sourceInfo: SourceInfo): T = markDontTouch(
+      RegEnable(markDontTouch(WireDefault(t)), en)
+    )
 
-    def optReg[T <: Data](input: T, en: Bool = en)(implicit sourceInfo: SourceInfo): T = if (pipelined || balanced) RegEnable(input, en) else input
+    def optReg[T <: Data](input: T, en: Bool = en)(implicit sourceInfo: SourceInfo): T =
+      if (pipelined || balanced) RegEnable(input, en) else input
 
     def r(i: Int, j: Int): Bool = rand(Gadget.upTriToLin(numShares, i, j))
 

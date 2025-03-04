@@ -22,7 +22,7 @@ val io = IO(new Bundle {
   layer.block(Verification.Assert) {
     val p = Pipe(!reset.asBool, io.x.reduce(_ + _), 1)
     when(p.valid) {
-      assert(io.out.unshared() === p.bits)
+      assert(io.out.unmasked() === p.bits)
     }
   }
 }
@@ -39,7 +39,7 @@ class A2B(order: Int = 1, W: Int) extends Module {
   layer.block(Verification.Assert) {
     val p = Pipe(!reset.asBool, io.x.reduce(_ + _), 1)
     when(p.valid) {
-      assert(io.out.unshared() === p.bits)
+      assert(io.out.unmasked() === p.bits)
     }
   }
 }

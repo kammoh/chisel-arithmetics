@@ -388,8 +388,8 @@ class Hpc2Module(order: Int, w: Int = 1, balanced: Boolean = true) extends Modul
 
     when(verifDelay.valid) {
       assert(
-        io.out.unshared() === ShiftRegister(
-          ShiftRegister(io.b.unshared(), if (balanced) 0 else 1) & io.a.unshared(),
+        io.out.unmasked() === ShiftRegister(
+          ShiftRegister(io.b.unmasked(), if (balanced) 0 else 1) & io.a.unmasked(),
           if (balanced) 2 else 1
         )
       )
@@ -423,11 +423,11 @@ class Hpc2ToffoliModule extends Module {
   io.out :#= g.toffoli(io.a, io.b, io.c, io.rand, 1.B)
 
   layer.block(Verification.Assert) {
-    val a_us_delayed = ShiftRegister(io.a.unshared(), if (balanced) 2 else 1)
-    val c_us_delayed = ShiftRegister(io.c.unshared(), if (balanced) 2 else 1)
-    val bp = Pipe(!reset.asBool, io.b.unshared(), 2)
+    val a_us_delayed = ShiftRegister(io.a.unmasked(), if (balanced) 2 else 1)
+    val c_us_delayed = ShiftRegister(io.c.unmasked(), if (balanced) 2 else 1)
+    val bp = Pipe(!reset.asBool, io.b.unmasked(), 2)
     when(bp.valid) {
-      assert(io.out.unshared() === (bp.bits & a_us_delayed) ^ c_us_delayed)
+      assert(io.out.unmasked() === (bp.bits & a_us_delayed) ^ c_us_delayed)
     }
   }
   if (!pipelined) {
